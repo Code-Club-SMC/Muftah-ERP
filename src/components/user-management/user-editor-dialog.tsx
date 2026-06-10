@@ -34,13 +34,22 @@ export function UserEditorDialog({
   );
 
   const [formState, setFormState] = useState(() => ({
-    name: dialogState?.mode === "edit" ? dialogState.user.name : "",
+    name:
+      dialogState?.mode === "edit"
+        ? dialogState.user.name
+        : dialogState?.seedOrderBooker?.name ?? "",
     email: dialogState?.mode === "edit" ? dialogState.user.email : "",
     password: "",
     roleSlug:
       dialogState?.mode === "edit"
         ? dialogState.user.roleAssignment?.slug ?? availableRoles[0]?.slug ?? "operator"
-        : availableRoles[0]?.slug ?? "operator",
+        : dialogState?.seedOrderBooker
+          ? "order-booker"
+          : availableRoles[0]?.slug ?? "operator",
+    orderBookerId:
+      dialogState?.mode === "create"
+        ? (dialogState.seedOrderBooker?.id ?? "")
+        : "",
   }));
 
   const submitting =
@@ -51,13 +60,22 @@ export function UserEditorDialog({
 
   const syncFormState = () => {
     setFormState({
-      name: dialogState?.mode === "edit" ? dialogState.user.name : "",
+      name:
+        dialogState?.mode === "edit"
+          ? dialogState.user.name
+          : dialogState?.seedOrderBooker?.name ?? "",
       email: dialogState?.mode === "edit" ? dialogState.user.email : "",
       password: "",
       roleSlug:
         dialogState?.mode === "edit"
           ? dialogState.user.roleAssignment?.slug ?? availableRoles[0]?.slug ?? "operator"
-          : availableRoles[0]?.slug ?? "operator",
+          : dialogState?.seedOrderBooker
+            ? "order-booker"
+            : availableRoles[0]?.slug ?? "operator",
+      orderBookerId:
+        dialogState?.mode === "create"
+          ? (dialogState.seedOrderBooker?.id ?? "")
+          : "",
     });
   };
 
@@ -83,6 +101,10 @@ export function UserEditorDialog({
         email: formState.email.trim().toLowerCase(),
         password: formState.password,
         roleSlug: formState.roleSlug,
+        orderBookerId:
+          formState.roleSlug === "order-booker" && formState.orderBookerId
+            ? formState.orderBookerId
+            : undefined,
       });
       close(false);
       return;

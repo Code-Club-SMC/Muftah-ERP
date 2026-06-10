@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getCommissionTiersFn,
+  getOrderBookerCommissionTiersFn,
   createCommissionTierFn,
   updateCommissionTierFn,
   deleteCommissionTierFn,
@@ -11,7 +12,15 @@ import {
 export function useGetCommissionTiers() {
   return useQuery({
     queryKey: ["commissionTiers"],
-    queryFn: () => getCommissionTiersFn(),
+    queryFn: () => getCommissionTiersFn({ data: {} }),
+  });
+}
+
+export function useGetOrderBookerCommissionTiers(orderBookerId: string) {
+  return useQuery({
+    queryKey: ["commissionTiers", orderBookerId],
+    queryFn: () => getOrderBookerCommissionTiersFn({ data: { orderBookerId } }),
+    enabled: !!orderBookerId,
   });
 }
 

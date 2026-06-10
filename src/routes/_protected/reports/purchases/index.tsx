@@ -41,31 +41,30 @@ function PurchasesReportPage() {
   return (
     <ReportPageShell
       title="Purchases Report"
-      subtitle="All supplier purchases with material details, quantities, costs, and payment status for the selected period."
+      subtitle="Supplier purchases with material details, quantities, costs, and payment status."
       onGenerate={handleGenerate}
       isLoading={isLoading}
       isEmpty={isEmpty}
       accentColor={ACCENT}
     >
       {data && (
-        <div className="space-y-10">
+        <div className="space-y-8">
           <section>
             <SectionTitle accentColor={ACCENT}>Period Summary</SectionTitle>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:grid-cols-4">
-              <SummaryCard label="Purchases" value={formatNumber(data.summary.count)} accentColor={ACCENT} delay={0} />
-              <SummaryCard label="Total Cost" value={formatPKR(data.summary.totalCost, false)} accentColor={ACCENT} delay={80} />
-              <SummaryCard label="Total Paid" value={formatPKR(data.summary.totalPaid, false)} accentColor={ACCENT} delay={160} />
-              <SummaryCard label="Outstanding" value={formatPKR(data.summary.totalOutstanding, false)} accentColor={ACCENT} delay={240} />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:grid-cols-4">
+              <SummaryCard label="Purchases" value={formatNumber(data.summary.count)} accentColor={ACCENT} />
+              <SummaryCard label="Total Cost" value={formatPKR(data.summary.totalCost, false)} accentColor={ACCENT} />
+              <SummaryCard label="Total Paid" value={formatPKR(data.summary.totalPaid, false)} accentColor={ACCENT} />
+              <SummaryCard label="Outstanding" value={formatPKR(data.summary.totalOutstanding, false)} accentColor={ACCENT} />
             </div>
           </section>
 
           <section>
             <SectionTitle accentColor={ACCENT}>Purchase Records</SectionTitle>
             <ReportTable
-              accentColor={ACCENT}
               headers={["Date", "Invoice #", "Supplier", "Warehouse", "Material", "Type", "Quantity", "Unit Cost", "Total", "Paid", "Method", "Status"]}
             >
-              {data.purchases.map((p: any) => {
+              {data.purchases.map((p) => {
                 const isFullyPaid = p.paidAmount >= p.cost;
                 const isPartial = p.paidAmount > 0 && p.paidAmount < p.cost;
                 return (
@@ -85,11 +84,11 @@ function PurchasesReportPage() {
                     <ReportCell muted className="capitalize">{p.paymentMethod || "—"}</ReportCell>
                     <ReportCell>
                       {isFullyPaid ? (
-                        <Badge variant="default" className="text-[9px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30">Paid</Badge>
+                        <Badge variant="default" className="text-[10px] bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30">Paid</Badge>
                       ) : isPartial ? (
-                        <Badge variant="secondary" className="text-[9px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 hover:bg-amber-500/30">Partial</Badge>
+                        <Badge variant="secondary" className="text-[10px] bg-amber-500/20 text-amber-400 hover:bg-amber-500/30">Partial</Badge>
                       ) : (
-                        <Badge variant="outline" className="text-[9px] font-bold uppercase tracking-wider text-rose-400 border-rose-400/30">Unpaid</Badge>
+                        <Badge variant="outline" className="text-[10px] text-rose-400 border-rose-400/30">Unpaid</Badge>
                       )}
                     </ReportCell>
                   </ReportTableRow>

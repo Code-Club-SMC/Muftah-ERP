@@ -40,7 +40,7 @@ export type EmployeeData = {
   joiningDate?: string | null;
   bankName: string | null;
   bankAccountNumber: string | null;
-  standardSalary: string;
+  basicSalary: string;
   allowanceConfig: AllowanceConfig[];
   standardDutyHours?: number; // fallback to 8 if absent
   /**
@@ -99,6 +99,7 @@ export type PayslipCalculation = {
   overtimeAmount: number;
   nightShiftAllowanceAmount: number;
   incentiveAmount: number;
+  commissionAmount: number;
   bonusAmount: number;
 
   // Deductions
@@ -245,7 +246,7 @@ export function calculateAbsentDeductions(
   const standardDutyHours = employee.standardDutyHours || 8;
   const config = employee.allowanceConfig || [];
 
-  const basicSalary = parseFloat(employee.standardSalary || "0");
+  const basicSalary = parseFloat(employee.basicSalary || "0");
   const perDayBasic = basicSalary / calendarDaysInMonth;
   const perHourBasic = perDayBasic / standardDutyHours;
 
@@ -484,6 +485,7 @@ export function calculatePayslip(
     overtimeAmount?: number;
     nightShiftAllowance?: number;
     incentiveAmount?: number;
+    commissionAmount?: number;
     bonusAmount?: number;
     advanceDeduction?: number;
     taxDeduction?: number;
@@ -493,7 +495,7 @@ export function calculatePayslip(
 ): PayslipCalculation {
   const stdDutyHours = employee.standardDutyHours || 8;
   const config = employee.allowanceConfig || [];
-  const basicSalaryStd = parseFloat(employee.standardSalary || "0");
+  const basicSalaryStd = parseFloat(employee.basicSalary || "0");
   const restDays = employee.restDays ?? [0];
 
   let joinedAtDate: string | null = null;
@@ -576,8 +578,8 @@ export function calculatePayslip(
     attendanceRecords,
     restDays,
   );
-  const pastRecords = workingDayRecords.filter(r => r.date <= evaluationEndDate && r.date >= evaluationStartDate && r.status !== "not_employed");
-  const accountedPastDays = pastRecords.filter(r => ["present", "absent", "leave"].includes(r.status)).length;
+  const pastRecords = workingDayRecords.filter(r => r.date <= evaluationEndDate && r.date >= evaluationStartDate);
+  const accountedPastDays = pastRecords.filter(r => ["present", "absent", "leave", "not_employed"].includes(r.status)).length;
   const unmarkedDays = Math.max(0, evaluationWindowWorkingDays - accountedPastDays);
 
   const daysPresent = workingDayRecords.filter(r => r.status === "present").length;
@@ -624,6 +626,7 @@ export function calculatePayslip(
   }
 
   const incentiveAmount = additionalAmounts.incentiveAmount || 0;
+  const commissionAmount = additionalAmounts.commissionAmount || 0;
   const bonusAmount = additionalAmounts.bonusAmount || 0;
 
   // ── 7. Gross ──────────────────────────────────────────────────────────────
@@ -636,6 +639,7 @@ export function calculatePayslip(
     overtimeAmount +
     nightShiftAllowanceAmount +
     incentiveAmount +
+    commissionAmount +
     bonusAmount;
 
   // ── 8. Flat deductions ────────────────────────────────────────────────────
@@ -648,7 +652,7 @@ export function calculatePayslip(
   const otherDeduction = manualDeductionsTotal;
 
   const totalDeductions = advanceDeduction + taxDeduction + otherDeduction;
-  const netSalary = Math.max(0, grossSalary - totalDeductions);
+  const netSalary = grossSalary - totalDeductions; // Allow negative for carry-forward
 
   // ── 9. Standard breakdown snapshot ───────────────────────────────────────
   const standardBreakdown: Record<string, number> = {};
@@ -694,6 +698,7 @@ export function calculatePayslip(
     overtimeAmount,
     nightShiftAllowanceAmount,
     incentiveAmount,
+    commissionAmount,
     bonusAmount,
 
     notEmployedDeduction: Math.round(notEmployedDeduction),

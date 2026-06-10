@@ -124,11 +124,10 @@ export const EmployeeDetailView = () => {
 
   // ── Salary calculations ──────────────────────────────────────────────────
   const allowanceConfig = (employee.allowanceConfig as any[]) || [];
-  const standardSalary = parseFloat(employee.standardSalary || "0") || 0;
-  const totalAllowances = allowanceConfig
-    .filter((a: any) => a.id !== "basicSalary")
-    .reduce((acc: number, curr: any) => acc + (parseFloat(curr.amount || "0") || 0), 0);
-  const grossSalary = standardSalary + totalAllowances;
+  const basicSalary = parseFloat(employee.basicSalary || "0") || 0;
+  const totalAllowances = allowanceConfig.reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0);
+
+  const grossSalary = basicSalary + totalAllowances;
 
   // ── Payroll stats ───────────────────────────────────────────────────────
   const totalNetPaid = payrollHistory.reduce(
@@ -246,7 +245,7 @@ export const EmployeeDetailView = () => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KPIStrip
           label="Basic Salary"
-          value={`PKR ${standardSalary.toLocaleString()}`}
+          value={`PKR ${basicSalary.toLocaleString()}`}
           icon={Banknote}
           color="blue"
         />
@@ -369,7 +368,7 @@ export const EmployeeDetailView = () => {
                       </span>
                     </div>
                     <span className="font-black text-primary tabular-nums">
-                      PKR {standardSalary.toLocaleString()}
+                      PKR {basicSalary.toLocaleString()}
                     </span>
                   </div>
 

@@ -18,8 +18,8 @@ import { cn } from "@/lib/utils";
 
 const editUserSchema = z.object({
   name: z.string().min(2, "Name is required"),
-  email: z.email("Invalid email address"),
-  role: z.enum(["admin", "finance-manager", "operator", "super-admin"]),
+  email: z.string().email("Invalid email address"),
+  roleSlug: z.enum(["admin", "finance-manager", "operator", "super-admin"]),
   password: z.string().refine((val) => val === "" || val.length >= 8, {
     message: "Password must be at least 8 characters",
   }),
@@ -52,17 +52,18 @@ export const EditUserForm = ({ user, onSuccess }: Props) => {
     defaultValues: {
       name: user.name || "",
       email: user.email || "",
-      role: user.role as "admin" | "finance-manager" | "operator" | "super-admin",
+      roleSlug: user.role as "admin" | "finance-manager" | "operator" | "super-admin",
       password: "",
     },
     validators: { onSubmit: editUserSchema },
     onSubmit: async ({ value }) => {
       const promises: Promise<any>[] = [];
 
-      if (value.role !== user.role)
-        promises.push(setRole.mutateAsync({ userId: user.id, role: value.role }));
+      if (value.roleSlug !== user.role) {
+        promises.push(setRole.mutateAsync({ userId: user.id, roleSlug: value.roleSlug }));
+      }
       if (value.name !== user.name || value.email !== user.email)
-        promises.push(updateUser.mutateAsync({ userId: user.id, data: { name: value.name, email: value.email } }));
+        promises.push(updateUser.mutateAsync({ userId: user.id, name: value.name, email: value.email }));
       if (value.password && value.password.length >= 8)
         promises.push(setUserPassword.mutateAsync({ userId: user.id, password: value.password }));
 
@@ -142,7 +143,7 @@ export const EditUserForm = ({ user, onSuccess }: Props) => {
           )}
         </form.Field>
 
-        <form.Field name="role">
+        <form.Field name="roleSlug">
           {(field) => (
             <Field className="space-y-1.5">
               <FieldLabel className="text-[12.5px] font-medium text-foreground/80 flex items-center gap-1.5">

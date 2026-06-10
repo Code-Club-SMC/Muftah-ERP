@@ -9,6 +9,7 @@ export { QcHoldSheet } from "./qc-hold-sheet";
 export { TransferSheet } from "./transfer-sheet";
 export { BatchStatusSheet } from "./batch-status-sheet";
 export { AddCartonsSheet } from "./add-cartons-sheet";
+export { AddCartonsToRecipeSheet } from "./add-cartons-to-recipe-sheet";
 export { DispatchSheet } from "./dispatch-sheet";
 export { ReturnSheet } from "./return-sheet";
 export { StockCountSheet } from "./stock-count-sheet";

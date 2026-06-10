@@ -66,8 +66,7 @@ export type EmployeePayrollRow = {
   designation: string;
   department: string | null;
   joiningDate: string;
-  basicSalary: string;
-  standardSalary: string | null;
+  basicSalary: string | null;
   hasPayslip: boolean;
   payslipId: string;
   netSalary: string;
@@ -238,14 +237,11 @@ export function PayrollContainer() {
         ),
       },
       {
-        accessorKey: "standardSalary",
-        header: "Std. Salary",
+        accessorKey: "basicSalary",
+        header: "Basic Salary",
         cell: ({ row }) => (
-          <div className="flex flex-col">
-            <span className="font-bold text-sm">
-              PKR {Math.round(parseFloat(row.original.standardSalary || "0")).toLocaleString()}
-            </span>
-            <span className="text-[10px] text-muted-foreground">Basic</span>
+          <div className="text-right font-medium">
+            PKR {Math.round(parseFloat(row.original.basicSalary || "0")).toLocaleString()}
           </div>
         ),
       },

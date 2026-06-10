@@ -5,50 +5,36 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1777453842387,
-      "tag": "0000_charming_colleen_wing",
+      "when": 1780306994050,
+      "tag": "0000_workable_shinobi_shaw",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1777538208313,
-      "tag": "0001_jittery_the_liberteens",
+      "when": 1780572521653,
+      "tag": "0001_rare_secret_warriors",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1777629075723,
-      "tag": "0002_quick_eternals",
+      "when": 1780572863258,
+      "tag": "0002_moaning_hannibal_king",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1777635042799,
-      "tag": "0003_square_zaran",
+      "when": 1780572953312,
+      "tag": "0003_minor_spyke",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1777800924873,
-      "tag": "0004_striped_justin_hammer",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1777809421552,
-      "tag": "0005_medical_wild_child",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1777810000000,
-      "tag": "0006_order_booker_overhaul",
+      "when": 1780573041088,
+      "tag": "0004_oval_morgan_stark",
       "breakpoints": true
     }
   ]

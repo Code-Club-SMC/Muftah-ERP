@@ -20,8 +20,8 @@ export type MissedCycleEntry = {
   missedPayoutMonth: string;
   /** Human label e.g. "February 2026" */
   missedMonthLabel: string;
-  /** The employee's standard salary — used as arrears estimate */
-  standardSalary: number;
+  /** The employee's basic salary — used as arrears estimate */
+  basicSalary: number;
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ export const getArrearsMissedCyclesFn = createServerFn()
         lastName: employees.lastName,
         designation: employees.designation,
         joiningDate: employees.joiningDate,
-        standardSalary: employees.standardSalary,
+        basicSalary: employees.basicSalary,
       })
       .from(employees)
       .where(eq(employees.status, "active"));
@@ -161,7 +161,7 @@ export const getArrearsMissedCyclesFn = createServerFn()
           designation: emp.designation,
           missedPayoutMonth: cycle.payoutMonthKey,
           missedMonthLabel: cycle.label,
-          standardSalary: parseFloat(emp.standardSalary || "0"),
+          basicSalary: parseFloat(emp.basicSalary || "0"),
         });
       }
     }

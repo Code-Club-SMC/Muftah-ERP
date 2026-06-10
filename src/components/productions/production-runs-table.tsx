@@ -300,14 +300,19 @@ export const ProductionRunsTable = ({
         ),
         cell: ({ row }) => {
           const run = row.original;
-          const totalCostNumeric = parseFloat(run.totalProductionCost || "0");
-          const hasGeneratedOutput = (run.completedUnits || 0) > 0;
-          const isStarted = run.status === "in_progress" || run.status === "completed";
 
-          const displayCost =
-            isStarted && hasGeneratedOutput
-              ? (totalCostNumeric / run.completedUnits!).toFixed(2)
-              : parseFloat(run.costPerContainer || "0").toFixed(2);
+          // Prefer actual cost per pack for completed runs, fall back to computed budget
+          const actualCost = Number(run.actualCostPerPack || "0");
+          const displayCost = actualCost > 0
+            ? actualCost.toFixed(2)
+            : (() => {
+                const totalCostNumeric = parseFloat(run.totalProductionCost || "0");
+                const hasGeneratedOutput = (run.completedUnits || 0) > 0;
+                const isStarted = run.status === "in_progress" || run.status === "completed";
+                return isStarted && hasGeneratedOutput
+                  ? (totalCostNumeric / run.completedUnits!).toFixed(2)
+                  : parseFloat(run.costPerContainer || "0").toFixed(2);
+              })();
 
           return (
             <Badge

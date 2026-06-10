@@ -77,12 +77,10 @@ export const {
 export const { customers, invoices, invoiceItems } = salesSchema;
 export const {
   salesmen,
-  customerPriceAgreements,
-  promotionalRules,
+  discountRules,
   payments,
   slipRecords,
   priceChangeLog,
-  customerDiscountRules,
   orderBookers,
   orders,
   orderItems,
@@ -90,10 +88,13 @@ export const {
   commissionTiers,
   commissionRecords,
   creditRecoveryAttempts,
+  recipePrices,
+  ledgerExportAuditLog,
+  salesPerformanceLogs,
 } = salesErpSchema;
 export const { wallets, expenses, transactions } = financeSchema;
 export const { supplierPayments, purchaseRecords } = supplierSchema;
 export const { suppliers } = coreSuppliers;
-export const { employees, attendance, payrolls, payslips } = hrSchema;
+export const { employees, attendance, payrolls, payslips, salaryRevisions, salaryAdvances, nightShiftRates, tadaRates, travelLogs, advanceInstallments, bradfordAuditLog, bradfordSnapshots } = hrSchema;
 export const { appPermissions, appRolePermissions, appRoles, userRoleAssignments } =
   rbacSchema;

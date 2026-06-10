@@ -8,63 +8,40 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-/*
- * Shared report UI primitives — "Dark Editorial Ledger" aesthetic.
- * Each report page imports these and passes its unique accent color.
- */
-
 type AccentColor = "emerald" | "rose" | "blue" | "amber" | "violet";
 
 const accentMap: Record<
   AccentColor,
   {
     bar: string;
-    border: string;
-    borderHover: string;
-    bgGradientFrom: string;
     text: string;
     rowHover: string;
   }
 > = {
   emerald: {
     bar: "bg-emerald-500",
-    border: "border-emerald-500/15",
-    borderHover: "hover:border-emerald-500/25",
-    bgGradientFrom: "from-emerald-500/[0.06]",
-    text: "text-emerald-400/80",
-    rowHover: "hover:bg-emerald-500/[0.04]",
+    text: "text-emerald-500",
+    rowHover: "hover:bg-emerald-500/5",
   },
   rose: {
     bar: "bg-rose-500",
-    border: "border-rose-500/15",
-    borderHover: "hover:border-rose-500/25",
-    bgGradientFrom: "from-rose-500/[0.06]",
-    text: "text-rose-400/80",
-    rowHover: "hover:bg-rose-500/[0.04]",
+    text: "text-rose-500",
+    rowHover: "hover:bg-rose-500/5",
   },
   blue: {
     bar: "bg-blue-500",
-    border: "border-blue-500/15",
-    borderHover: "hover:border-blue-500/25",
-    bgGradientFrom: "from-blue-500/[0.06]",
-    text: "text-blue-400/80",
-    rowHover: "hover:bg-blue-500/[0.04]",
+    text: "text-blue-500",
+    rowHover: "hover:bg-blue-500/5",
   },
   amber: {
     bar: "bg-amber-500",
-    border: "border-amber-500/15",
-    borderHover: "hover:border-amber-500/25",
-    bgGradientFrom: "from-amber-500/[0.06]",
-    text: "text-amber-400/80",
-    rowHover: "hover:bg-amber-500/[0.04]",
+    text: "text-amber-500",
+    rowHover: "hover:bg-amber-500/5",
   },
   violet: {
     bar: "bg-violet-500",
-    border: "border-violet-500/15",
-    borderHover: "hover:border-violet-500/25",
-    bgGradientFrom: "from-violet-500/[0.06]",
-    text: "text-violet-400/80",
-    rowHover: "hover:bg-violet-500/[0.04]",
+    text: "text-violet-500",
+    rowHover: "hover:bg-violet-500/5",
   },
 };
 
@@ -77,11 +54,9 @@ export function SectionTitle({
 }) {
   const a = accentMap[accentColor];
   return (
-    <div className="flex items-center gap-3 mb-5">
-      <div className={`w-1 h-6 rounded-full ${a.bar}`} />
-      <h2 className="text-lg font-bold tracking-tight font-[family-name:var(--font-dm-sans)]">
-        {children}
-      </h2>
+    <div className="flex items-center gap-2 mb-4">
+      <div className={`w-0.5 h-5 rounded ${a.bar}`} />
+      <h2 className="text-base font-semibold tracking-tight">{children}</h2>
     </div>
   );
 }
@@ -90,24 +65,19 @@ export function SummaryCard({
   label,
   value,
   accentColor = "emerald",
-  delay = 0,
 }: {
   label: string;
   value: string;
   accentColor?: AccentColor;
-  delay?: number;
 }) {
   const a = accentMap[accentColor];
   return (
-    <Card
-      className={`${a.border} bg-gradient-to-br ${a.bgGradientFrom} to-transparent ${a.borderHover} transition-all duration-300 group animate-in fade-in slide-in-from-bottom-2`}
-      style={{ animationDelay: `${delay}ms`, animationFillMode: "both" }}
-    >
-      <CardContent className="pt-5 pb-4 px-5">
-        <div className={`text-[10px] font-bold uppercase tracking-[0.12em] ${a.text} mb-2`}>
+    <Card>
+      <CardContent className="pt-4 px-4">
+        <div className={`text-[11px] font-medium uppercase tracking-wide ${a.text} mb-1`}>
           {label}
         </div>
-        <div className="text-xl font-black tracking-tight font-mono tabular-nums text-foreground">
+        <div className="text-lg font-semibold font-mono tabular-nums">
           {value}
         </div>
       </CardContent>
@@ -121,17 +91,16 @@ export function ReportTable({
 }: {
   headers: React.ReactNode[];
   children: React.ReactNode;
-  accentColor?: AccentColor;
 }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-border/40 bg-card/30">
+    <div className="overflow-x-auto rounded-md border">
       <Table>
         <TableHeader>
-          <TableRow className="hover:bg-transparent border-b border-border/50">
+          <TableRow className="hover:bg-transparent">
             {headers.map((h, i) => (
               <TableHead
                 key={i}
-                className={`text-[10px] uppercase font-bold tracking-[0.1em] text-muted-foreground/70 bg-muted/20 h-10 ${i === headers.length - 1 ? "text-right" : ""}`}
+                className={`text-xs font-medium uppercase text-muted-foreground h-9 ${i === headers.length - 1 ? "text-right" : ""}`}
               >
                 {h}
               </TableHead>
@@ -153,9 +122,7 @@ export function ReportTableRow({
 }) {
   const a = accentMap[accentColor];
   return (
-    <TableRow
-      className={`border-b border-border/30 transition-colors ${a.rowHover} group/row`}
-    >
+    <TableRow className={`transition-colors ${a.rowHover}`}>
       {children}
     </TableRow>
   );
@@ -178,12 +145,12 @@ export function ReportCell({
 }) {
   const alignClass = align === "right" ? "text-right" : align === "center" ? "text-center" : "";
   const monoClass = mono ? "font-mono tabular-nums" : "";
-  const boldClass = bold ? "font-semibold" : "";
+  const boldClass = bold ? "font-medium" : "";
   const mutedClass = muted ? "text-muted-foreground" : "";
 
   return (
     <TableCell
-      className={`text-[13px] py-3.5 ${alignClass} ${monoClass} ${boldClass} ${mutedClass} ${className}`}
+      className={`text-sm py-2.5 ${alignClass} ${monoClass} ${boldClass} ${mutedClass} ${className}`}
     >
       {children}
     </TableCell>
@@ -194,11 +161,10 @@ export function EmptySection({
   message,
 }: {
   message: string;
-  accentColor?: AccentColor;
 }) {
   return (
-    <div className="flex items-center justify-center py-12 text-center bg-muted/[0.02] rounded-xl border border-dashed border-border/25 print:hidden">
-      <p className="text-sm text-muted-foreground/60">{message}</p>
+    <div className="flex items-center justify-center py-8 text-center border border-dashed rounded-md print:hidden">
+      <p className="text-sm text-muted-foreground">{message}</p>
     </div>
   );
 }

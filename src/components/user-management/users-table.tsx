@@ -1,6 +1,6 @@
 import { UserEditorDialog } from "./user-editor-dialog";
 import { RoleEditorDialog } from "./role-editor-dialog";
-import { ManagedUser, ManagedRole, PermissionDefinition, UserDialogState, RoleDialogState, LandingPathPill } from "./types";
+import { ManagedUser, UserDialogState, RoleDialogState } from "./types";
 import { useDeferredValue, useMemo, useState } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -22,6 +22,7 @@ import {
   MonitorDot,
   ChevronRight,
   Landmark,
+  Link2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { adminGetUsersFn } from "@/server-functions/user-management/super-admin-get-users-fn";
@@ -423,6 +424,37 @@ export const UsersTable = () => {
 
             {/* ── USERS TAB ── */}
             <TabsContent value="users" className="p-0 m-0">
+              {data.onboardingOrderBookers.length > 0 && (
+                <div className="border-b border-border/40 bg-amber-50/60 px-4 py-3 dark:bg-amber-500/10">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-[12px] font-semibold text-foreground">
+                      Order bookers pending credential setup
+                    </p>
+                    <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px]">
+                      {data.onboardingOrderBookers.length}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {data.onboardingOrderBookers.slice(0, 10).map((ob) => (
+                      <Button
+                        key={ob.id}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 rounded-full border-border/70 bg-background px-3 text-[11px]"
+                        onClick={() =>
+                          setUserDialog({
+                            mode: "create",
+                            seedOrderBooker: ob,
+                          })
+                        }
+                      >
+                        <Link2 className="mr-1 size-3" />
+                        {ob.name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <DataTable
                 columns={userColumns}
                 data={filteredUsers}

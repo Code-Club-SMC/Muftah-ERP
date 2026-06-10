@@ -22,7 +22,7 @@ import {
 
 // ---------------------------------------------------------------------------
 // Employee definitions — uses the current schema shape:
-//   standardSalary  = the Basic Salary (top-level PKR amount)
+//   basicSalary  = the Basic Salary (top-level PKR amount)
 //   allowanceConfig = JSON array of { id, name, amount }
 //   No basicSalary / isOperator / individual allowance columns
 // ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ type EmployeeSeed = {
   department: string;
   joiningDate: string;
   employmentType: "full_time" | "part_time" | "contract" | "intern";
-  standardSalary: string;
+  basicSalary: string;
   standardDutyHours: number;
   allowanceConfig: AllowanceConfig[];
   cnic?: string;
@@ -66,7 +66,6 @@ type EmployeeSeed = {
   bankName?: string;
   bankAccountNumber?: string;
   isOrderBooker?: boolean;
-  commissionRate?: string;
 };
 
 const employeeData: EmployeeSeed[] = [
@@ -78,7 +77,7 @@ const employeeData: EmployeeSeed[] = [
     department: "Administration",
     joiningDate: "2023-01-15",
     employmentType: "full_time",
-    standardSalary: "125000",
+    basicSalary: "125000",
     standardDutyHours: 8,
     phone: "0321-1234567",
     bankName: "HBL",
@@ -99,7 +98,7 @@ const employeeData: EmployeeSeed[] = [
     department: "Finance",
     joiningDate: "2023-03-10",
     employmentType: "full_time",
-    standardSalary: "90000",
+    basicSalary: "90000",
     standardDutyHours: 8,
     phone: "0333-9876543",
     bankName: "MCB",
@@ -120,7 +119,7 @@ const employeeData: EmployeeSeed[] = [
     department: "Production",
     joiningDate: "2023-06-01",
     employmentType: "full_time",
-    standardSalary: "60000",
+    basicSalary: "60000",
     standardDutyHours: 8,
     allowanceConfig: [
       buildAllowance({ id: "houseRent", name: "House Rent", amount: 24000 }),
@@ -138,7 +137,7 @@ const employeeData: EmployeeSeed[] = [
     department: "Production",
     joiningDate: "2023-08-15",
     employmentType: "full_time",
-    standardSalary: "35000",
+    basicSalary: "35000",
     standardDutyHours: 8,
     allowanceConfig: [
       buildAllowance({ id: "houseRent", name: "House Rent", amount: 14000 }),
@@ -155,7 +154,7 @@ const employeeData: EmployeeSeed[] = [
     department: "Production",
     joiningDate: "2023-09-20",
     employmentType: "full_time",
-    standardSalary: "32500",
+    basicSalary: "32500",
     standardDutyHours: 8,
     allowanceConfig: [
       buildAllowance({ id: "houseRent", name: "House Rent", amount: 13000 }),
@@ -172,7 +171,7 @@ const employeeData: EmployeeSeed[] = [
     department: "Security",
     joiningDate: "2023-02-01",
     employmentType: "full_time",
-    standardSalary: "22500",
+    basicSalary: "22500",
     standardDutyHours: 12, // 12-hour shift
     allowanceConfig: [
       buildAllowance({ id: "houseRent", name: "House Rent", amount: 9000 }),
@@ -190,10 +189,9 @@ const employeeData: EmployeeSeed[] = [
     department: "Sales",
     joiningDate: "2023-05-10",
     employmentType: "full_time",
-    standardSalary: "40000",
+    basicSalary: "40000",
     standardDutyHours: 8,
     isOrderBooker: true,
-    commissionRate: "1.50",
     allowanceConfig: [
       buildAllowance({ id: "houseRent", name: "House Rent", amount: 16000 }),
       buildAllowance({ id: "utilities", name: "Utilities", amount: 8000 }),
@@ -208,10 +206,9 @@ const employeeData: EmployeeSeed[] = [
     department: "Sales",
     joiningDate: "2023-07-22",
     employmentType: "full_time",
-    standardSalary: "38000",
+    basicSalary: "38000",
     standardDutyHours: 8,
     isOrderBooker: true,
-    commissionRate: "1.75",
     allowanceConfig: [
       buildAllowance({ id: "houseRent", name: "House Rent", amount: 15200 }),
       buildAllowance({ id: "utilities", name: "Utilities", amount: 7600 }),
@@ -294,7 +291,7 @@ async function seedHR() {
       const [updated] = await db
         .update(employees)
         .set({
-          standardSalary: emp.standardSalary,
+          basicSalary: emp.basicSalary,
           standardDutyHours: emp.standardDutyHours,
           allowanceConfig: emp.allowanceConfig,
           firstName: emp.firstName,
@@ -305,7 +302,6 @@ async function seedHR() {
           bankName: emp.bankName ?? null,
           bankAccountNumber: emp.bankAccountNumber ?? null,
           isOrderBooker: emp.isOrderBooker ?? false,
-          commissionRate: emp.commissionRate ?? "0",
         })
         .where(eq(employees.employeeCode, emp.employeeCode))
         .returning();
@@ -326,7 +322,7 @@ async function seedHR() {
           joiningDate: emp.joiningDate,
           employmentType: emp.employmentType,
           status: "active",
-          standardSalary: emp.standardSalary,
+          basicSalary: emp.basicSalary,
           standardDutyHours: emp.standardDutyHours,
           allowanceConfig: emp.allowanceConfig,
           phone: emp.phone ?? null,
@@ -335,7 +331,6 @@ async function seedHR() {
           bankName: emp.bankName ?? null,
           bankAccountNumber: emp.bankAccountNumber ?? null,
           isOrderBooker: emp.isOrderBooker ?? false,
-          commissionRate: emp.commissionRate ?? "0",
         })
         .returning();
       insertedEmployees.push(newEmp);
@@ -575,7 +570,7 @@ async function seedHR() {
       designation: emp.designation,
       bankName: emp.bankName,
       bankAccountNumber: emp.bankAccountNumber,
-      standardSalary: emp.standardSalary ?? "0",
+      basicSalary: emp.basicSalary ?? "0",
       allowanceConfig: (emp.allowanceConfig as AllowanceConfig[]) ?? [],
       standardDutyHours: emp.standardDutyHours ?? 8,
     };

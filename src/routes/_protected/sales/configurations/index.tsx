@@ -30,32 +30,35 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  useGetCustomerPriceAgreements,
-  useCreateCustomerPriceAgreement,
-  useDeleteCustomerPriceAgreement,
-  useGetPromotionalRules,
-  useCreatePromotionalRule,
-  useDeletePromotionalRule,
+  useGetRecipePrices,
+  useUpsertRecipePrice,
 } from "@/hooks/sales/use-sales-config";
+import {
+  useCreateDiscountRule,
+  useDeleteDiscountRule,
+} from "@/hooks/sales/use-discount-rules";
+import {
+  getDiscountRulesFn,
+} from "@/server-functions/sales/discount-rules-fn";
+import {
+  getCustomersByTypeFn,
+  getRecipesFn,
+} from "@/server-functions/sales/sales-config-fn";
 import {
   useGetCommissionTiers,
   useCreateCommissionTier,
   useDeleteCommissionTier,
 } from "@/hooks/sales/use-order-booker-commission";
-import {
-  getCustomerDiscountRulesFn,
-  deactivateCustomerDiscountRuleFn,
-} from "@/server-functions/sales/customer-discount-rules-fn";
+import { useGetOrderBookers } from "@/hooks/sales/use-sales-people";
 import {
   getActiveTadaRateFn,
   listTadaRatesFn,
   setTadaRateFn,
 } from "@/server-functions/hr/rates/tada-rates-fn";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useGetAllCustomers } from "@/hooks/sales/use-customers";
 import { getProductsFn } from "@/server-functions/sales/sales-config-fn";
 import { format } from "date-fns";
-import { Trash2, Plus, Settings, Car } from "lucide-react";
+import { Trash2, Plus, Settings, Car, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 const PKR = (v: number) =>
@@ -81,7 +84,7 @@ function SalesConfigurationsPage() {
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Sales Configurations</h2>
         <p className="text-muted-foreground mt-1">
-          Manage pricing, promotional rules, discount rules, and TADA rates.
+          Manage discount rules, item prices, TADA rates, and commission tiers.
         </p>
       </div>
       <Separator />
@@ -94,25 +97,20 @@ function SalesConfigurationsPage() {
 
 function ConfigurationsContent() {
   return (
-    <Tabs defaultValue="pricing" className="w-full">
+    <Tabs defaultValue="discount" className="w-full">
       <TabsList className="mb-4">
-        <TabsTrigger value="pricing">Distributor Pricing</TabsTrigger>
-        <TabsTrigger value="promotions">Promotional Rules</TabsTrigger>
-        <TabsTrigger value="discounts">Discount Rules</TabsTrigger>
+        <TabsTrigger value="discount">Discount</TabsTrigger>
+        <TabsTrigger value="item-prices">Item Prices</TabsTrigger>
         <TabsTrigger value="tada">TADA Rate</TabsTrigger>
         <TabsTrigger value="commissions">Commission Tiers</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="pricing">
-        <PriceAgreementsTab />
+      <TabsContent value="discount">
+        <DiscountTab />
       </TabsContent>
 
-      <TabsContent value="promotions">
-        <PromotionalRulesTab />
-      </TabsContent>
-
-      <TabsContent value="discounts">
-        <DiscountRulesTab />
+      <TabsContent value="item-prices">
+        <ItemPricesTab />
       </TabsContent>
 
       <TabsContent value="tada">
@@ -126,238 +124,50 @@ function ConfigurationsContent() {
   );
 }
 
-// ── Price Agreements Tab ──
-function PriceAgreementsTab() {
-  const { data: agreements } = useGetCustomerPriceAgreements();
-  const deleteMutation = useDeleteCustomerPriceAgreement();
+// ── Discount Tab ──
+function DiscountTab() {
+  const { data: rules } = useQuery({
+    queryKey: ["discount-rules"],
+    queryFn: () => getDiscountRulesFn({ data: {} }),
+  });
+  const deleteMutation = useDeleteDiscountRule();
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Customer Price Agreements</h3>
-        <AddPriceAgreementDialog />
+        <h3 className="text-lg font-semibold">Discount Rules</h3>
+        <AddDiscountRuleDialog />
       </div>
 
       <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-[11px]">Customer</TableHead>
-              <TableHead className="text-[11px]">Product</TableHead>
-              <TableHead className="text-[11px]">Type</TableHead>
-              <TableHead className="text-[11px] text-right">Value</TableHead>
+              <TableHead className="text-[11px]">Distributor</TableHead>
+              <TableHead className="text-[11px]">Item / Recipe</TableHead>
+              <TableHead className="text-[11px] text-right">Buy Qty</TableHead>
+              <TableHead className="text-[11px] text-right">Free Units</TableHead>
               <TableHead className="text-[11px]">Effective</TableHead>
-              <TableHead className="text-[11px] w-[50px]" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {!agreements?.length ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-10 text-sm">
-                  No price agreements configured.
-                </TableCell>
-              </TableRow>
-            ) : (
-              agreements.map((a: any) => (
-                <TableRow key={a.id}>
-                  <TableCell className="text-sm">
-                    <div className="flex flex-col">
-                      <span className="font-medium">{a.customer?.name}</span>
-                      <Badge variant="outline" className="w-fit text-[10px] mt-0.5">
-                        {a.customer?.customerType}
-                      </Badge>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm">{a.product?.name}</TableCell>
-                  <TableCell className="text-sm capitalize">{a.pricingType.replace(/_/g, " ")}</TableCell>
-                  <TableCell className="text-sm tabular-nums text-right font-medium">
-                    {PKR(Number(a.agreedValue))}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {format(new Date(a.effectiveFrom), "dd MMM yyyy")}
-                    {a.effectiveTo && ` → ${format(new Date(a.effectiveTo), "dd MMM yyyy")}`}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      onClick={() => deleteMutation.mutate({ data: { id: a.id } })}
-                    >
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
-  );
-}
-
-function AddPriceAgreementDialog() {
-  const [open, setOpen] = useState(false);
-  const { data: customers } = useGetAllCustomers();
-  const createMutation = useCreateCustomerPriceAgreement();
-  const [form, setForm] = useState({
-    customerId: "",
-    productId: "",
-    pricingType: "fixed" as "fixed" | "margin_off_tp" | "flat_discount",
-    agreedValue: "",
-    tpBaseline: "",
-  });
-
-  const { data: productsList } = useQuery({
-    queryKey: ["all-products"],
-    queryFn: () => getProductsFn(),
-  });
-
-  const handleSubmit = () => {
-    createMutation.mutate(
-      {
-        data: {
-          customerId: form.customerId,
-          productId: form.productId,
-          pricingType: form.pricingType,
-          agreedValue: Number(form.agreedValue),
-          tpBaseline: form.tpBaseline ? Number(form.tpBaseline) : undefined,
-        },
-      },
-      {
-        onSuccess: () => {
-          setOpen(false);
-          toast.success("Price agreement created");
-        },
-      },
-    );
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm">
-          <Plus className="size-4 mr-1.5" />
-          Add Agreement
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>New Price Agreement</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 pt-2">
-          <div className="space-y-1.5">
-            <Label>Customer</Label>
-            <Select value={form.customerId} onValueChange={(v) => setForm((f) => ({ ...f, customerId: v }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select customer" />
-              </SelectTrigger>
-              <SelectContent>
-                {customers?.map((c: any) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name} ({c.customerType})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Product</Label>
-            <Select value={form.productId} onValueChange={(v) => setForm((f) => ({ ...f, productId: v }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select product" />
-              </SelectTrigger>
-              <SelectContent>
-                {productsList?.map((p: any) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Pricing Type</Label>
-            <Select value={form.pricingType} onValueChange={(v: any) => setForm((f) => ({ ...f, pricingType: v }))}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="fixed">Fixed Price</SelectItem>
-                <SelectItem value="margin_off_tp">Margin off TP</SelectItem>
-                <SelectItem value="flat_discount">Flat Discount</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Agreed Value {form.pricingType === "margin_off_tp" ? "(margin %)" : "(PKR)"}</Label>
-            <Input
-              type="number"
-              value={form.agreedValue}
-              onChange={(e) => setForm((f) => ({ ...f, agreedValue: e.target.value }))}
-            />
-          </div>
-          {form.pricingType === "margin_off_tp" && (
-            <div className="space-y-1.5">
-              <Label>TP Baseline (PKR)</Label>
-              <Input
-                type="number"
-                value={form.tpBaseline}
-                onChange={(e) => setForm((f) => ({ ...f, tpBaseline: e.target.value }))}
-              />
-            </div>
-          )}
-          <Button className="w-full" onClick={handleSubmit} disabled={createMutation.isPending}>
-            Create Agreement
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ── Promotional Rules Tab ──
-function PromotionalRulesTab() {
-  const { data: rules } = useGetPromotionalRules();
-  const deleteMutation = useDeletePromotionalRule();
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Promotional Rules</h3>
-        <AddPromotionalRuleDialog />
-      </div>
-
-      <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="text-[11px]">Product</TableHead>
-              <TableHead className="text-[11px]">Rule</TableHead>
-              <TableHead className="text-[11px]">Eligible</TableHead>
-              <TableHead className="text-[11px]">Active Period</TableHead>
               <TableHead className="text-[11px] w-[50px]" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {!rules?.length ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-10 text-sm">
-                  No promotional rules configured.
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-10 text-sm">
+                  No discount rules configured.
                 </TableCell>
               </TableRow>
             ) : (
               rules.map((r: any) => (
                 <TableRow key={r.id}>
-                  <TableCell className="text-sm font-medium">{r.product?.name}</TableCell>
-                  <TableCell className="text-sm">
-                    Buy <strong>{r.buyQty}</strong> get <strong>{r.freeQty}</strong> free
-                  </TableCell>
-                  <TableCell className="text-sm capitalize">{r.eligibleCustomerType}</TableCell>
+                  <TableCell className="text-sm font-medium">{r.customer?.name}</TableCell>
+                  <TableCell className="text-sm">{r.recipe?.name}</TableCell>
+                  <TableCell className="text-sm text-right tabular-nums">{r.quantityThreshold}</TableCell>
+                  <TableCell className="text-sm text-right tabular-nums">{r.freeUnits}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {format(new Date(r.activeFrom), "dd MMM yyyy")}
-                    {r.activeTo && ` → ${format(new Date(r.activeTo), "dd MMM yyyy")}`}
+                    {format(new Date(r.effectiveFrom), "dd MMM yyyy")}
+                    {r.effectiveTo && ` → ${format(new Date(r.effectiveTo), "dd MMM yyyy")}`}
                   </TableCell>
                   <TableCell>
                     <Button
@@ -379,35 +189,45 @@ function PromotionalRulesTab() {
   );
 }
 
-function AddPromotionalRuleDialog() {
+function AddDiscountRuleDialog() {
   const [open, setOpen] = useState(false);
-  const createMutation = useCreatePromotionalRule();
+  const createMutation = useCreateDiscountRule();
   const [form, setForm] = useState({
-    productId: "",
-    buyQty: "",
-    freeQty: "",
-    eligibleCustomerType: "all" as "shopkeeper" | "distributor" | "retailer" | "wholesaler" | "all",
+    customerId: "",
+    recipeId: "",
+    quantityThreshold: "",
+    freeUnits: "",
   });
 
-  const { data: productsList } = useQuery({
-    queryKey: ["all-products"],
-    queryFn: () => getProductsFn(),
+  const { data: distributors } = useQuery({
+    queryKey: ["distributors-for-discount"],
+    queryFn: () => getCustomersByTypeFn({ data: { customerType: "distributor", page: 1, limit: 200 } }),
+  });
+
+  const { data: recipesList } = useQuery({
+    queryKey: ["all-recipes"],
+    queryFn: () => getRecipesFn(),
   });
 
   const handleSubmit = () => {
+    if (!form.customerId || !form.recipeId || !form.quantityThreshold || !form.freeUnits) {
+      toast.error("All fields are required");
+      return;
+    }
     createMutation.mutate(
       {
         data: {
-          productId: form.productId,
-          buyQty: Number(form.buyQty),
-          freeQty: Number(form.freeQty),
-          eligibleCustomerType: form.eligibleCustomerType,
+          customerId: form.customerId,
+          recipeId: form.recipeId,
+          quantityThreshold: Number(form.quantityThreshold),
+          freeUnits: Number(form.freeUnits),
         },
       },
       {
         onSuccess: () => {
           setOpen(false);
-          toast.success("Promotional rule created");
+          toast.success("Discount rule created");
+          setForm({ customerId: "", recipeId: "", quantityThreshold: "", freeUnits: "" });
         },
       },
     );
@@ -423,19 +243,34 @@ function AddPromotionalRuleDialog() {
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New Promotional Rule</DialogTitle>
+          <DialogTitle>New Discount Rule</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
           <div className="space-y-1.5">
-            <Label>Product</Label>
-            <Select value={form.productId} onValueChange={(v) => setForm((f) => ({ ...f, productId: v }))}>
+            <Label>Distributor</Label>
+            <Select value={form.customerId} onValueChange={(v) => setForm((f) => ({ ...f, customerId: v }))}>
               <SelectTrigger>
-                <SelectValue placeholder="Select product" />
+                <SelectValue placeholder="Select distributor" />
               </SelectTrigger>
               <SelectContent>
-                {productsList?.map((p: any) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
+                {distributors?.data?.map((d: any) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Item / Recipe</Label>
+            <Select value={form.recipeId} onValueChange={(v) => setForm((f) => ({ ...f, recipeId: v }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select item" />
+              </SelectTrigger>
+              <SelectContent>
+                {recipesList?.map((r: any) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -443,28 +278,13 @@ function AddPromotionalRuleDialog() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Buy Qty</Label>
-              <Input type="number" value={form.buyQty} onChange={(e) => setForm((f) => ({ ...f, buyQty: e.target.value }))} />
+              <Label>Buy Qty (cartons)</Label>
+              <Input type="number" value={form.quantityThreshold} onChange={(e) => setForm((f) => ({ ...f, quantityThreshold: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
-              <Label>Free Qty</Label>
-              <Input type="number" value={form.freeQty} onChange={(e) => setForm((f) => ({ ...f, freeQty: e.target.value }))} />
+              <Label>Free Units</Label>
+              <Input type="number" value={form.freeUnits} onChange={(e) => setForm((f) => ({ ...f, freeUnits: e.target.value }))} />
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Eligible Customer Type</Label>
-            <Select value={form.eligibleCustomerType} onValueChange={(v: any) => setForm((f) => ({ ...f, eligibleCustomerType: v }))}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="distributor">Distributor</SelectItem>
-                <SelectItem value="retailer">Retailer</SelectItem>
-                <SelectItem value="shopkeeper">Shopkeeper</SelectItem>
-                <SelectItem value="wholesaler">Wholesaler</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
           <Button className="w-full" onClick={handleSubmit} disabled={createMutation.isPending}>
             Create Rule
@@ -472,78 +292,6 @@ function AddPromotionalRuleDialog() {
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-// ── Discount Rules Tab ──
-function DiscountRulesTab() {
-  const { data: rules } = useQuery({
-    queryKey: ["customer-discount-rules"],
-    queryFn: () => getCustomerDiscountRulesFn({ data: {} }),
-  });
-
-  const qc = useQueryClient();
-  const deactivateMutation = useMutation({
-    mutationFn: deactivateCustomerDiscountRuleFn,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["customer-discount-rules"] });
-    },
-  });
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Customer Discount Rules</h3>
-      </div>
-
-      <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="text-[11px]">Customer</TableHead>
-              <TableHead className="text-[11px]">Product</TableHead>
-              <TableHead className="text-[11px]">Threshold</TableHead>
-              <TableHead className="text-[11px]">Discount</TableHead>
-              <TableHead className="text-[11px]">Eligible</TableHead>
-              <TableHead className="text-[11px] w-[50px]" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {!rules?.length ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-10 text-sm">
-                  No discount rules configured.
-                </TableCell>
-              </TableRow>
-            ) : (
-              rules.map((r: any) => (
-                <TableRow key={r.id}>
-                  <TableCell className="text-sm font-medium">{r.customer?.name}</TableCell>
-                  <TableCell className="text-sm">{r.product?.name}</TableCell>
-                  <TableCell className="text-sm">{r.volumeThreshold} cartons</TableCell>
-                  <TableCell className="text-sm">
-                    {r.discountType === "percentage" && `${r.discountValue}%`}
-                    {r.discountType === "fixed_amount" && PKR(Number(r.discountValue))}
-                    {r.discountType === "carton_equivalent" && `${r.discountValue} cartons`}
-                  </TableCell>
-                  <TableCell className="text-sm capitalize">{r.eligibleCustomerType}</TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      onClick={() => deactivateMutation.mutate({ data: { id: r.id } })}
-                    >
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
   );
 }
 
@@ -672,15 +420,17 @@ function TadaRateTab() {
 // ── Commission Tiers Tab ──
 function CommissionTiersTab() {
   const { data: tiers } = useGetCommissionTiers();
+  const { data: orderBookers } = useGetOrderBookers();
   const createTier = useCreateCommissionTier();
   const deleteTier = useDeleteCommissionTier();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ minAmount: "", maxAmount: "", rate: "" });
+  const [form, setForm] = useState({ orderBookerId: "", minAmount: "", maxAmount: "", rate: "" });
 
   const handleSubmit = () => {
     createTier.mutate(
       {
         data: {
+          orderBookerId: form.orderBookerId || undefined,
           minAmount: Number(form.minAmount) || 0,
           maxAmount: form.maxAmount ? Number(form.maxAmount) : null,
           rate: Number(form.rate) || 0,
@@ -690,11 +440,13 @@ function CommissionTiersTab() {
         onSuccess: () => {
           setOpen(false);
           toast.success("Commission tier created");
-          setForm({ minAmount: "", maxAmount: "", rate: "" });
+          setForm({ orderBookerId: "", minAmount: "", maxAmount: "", rate: "" });
         },
       },
     );
   };
+
+  const bookerMap = new Map(orderBookers?.map((ob: any) => [ob.id, ob.name]) ?? []);
 
   return (
     <div className="space-y-4">
@@ -707,6 +459,19 @@ function CommissionTiersTab() {
           <DialogContent className="sm:max-w-md">
             <DialogHeader><DialogTitle>New Commission Tier</DialogTitle></DialogHeader>
             <div className="space-y-4 pt-2">
+              <div className="space-y-1.5">
+                <Label>Order Booker (optional — leave empty for global tier)</Label>
+                <Select value={form.orderBookerId} onValueChange={(v) => setForm((f) => ({ ...f, orderBookerId: v }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Global tier (applies to all)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(orderBookers || []).map((ob: any) => (
+                      <SelectItem key={ob.id} value={ob.id}>{ob.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Min Amount (PKR)</Label>
@@ -721,7 +486,9 @@ function CommissionTiersTab() {
                 <Label>Rate (%)</Label>
                 <Input type="number" step="0.01" value={form.rate} onChange={(e) => setForm((f) => ({ ...f, rate: e.target.value }))} />
               </div>
-              <Button className="w-full" onClick={handleSubmit} disabled={createTier.isPending}>Create Tier</Button>
+              <Button className="w-full" onClick={handleSubmit} disabled={createTier.isPending}>
+                Create {form.orderBookerId ? "Custom" : "Global"} Tier
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
@@ -731,6 +498,7 @@ function CommissionTiersTab() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="text-[11px]">Order Booker</TableHead>
               <TableHead className="text-[11px]">Min Amount</TableHead>
               <TableHead className="text-[11px]">Max Amount</TableHead>
               <TableHead className="text-[11px] text-right">Rate</TableHead>
@@ -741,11 +509,18 @@ function CommissionTiersTab() {
           <TableBody>
             {!tiers?.length ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-10 text-sm">No commission tiers found.</TableCell>
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-10 text-sm">No commission tiers found.</TableCell>
               </TableRow>
             ) : (
               tiers.map((tier: any) => (
                 <TableRow key={tier.id}>
+                  <TableCell className="text-sm">
+                    {tier.orderBookerId ? (
+                      <Badge variant="secondary" className="text-[10px]">{bookerMap.get(tier.orderBookerId) || "Custom"}</Badge>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">Global</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-sm">PKR {tier.minAmount}</TableCell>
                   <TableCell className="text-sm">{tier.maxAmount ? `PKR ${tier.maxAmount}` : "Unlimited"}</TableCell>
                   <TableCell className="text-sm text-right tabular-nums">{tier.rate}%</TableCell>
@@ -759,6 +534,132 @@ function CommissionTiersTab() {
                   </TableCell>
                 </TableRow>
               ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+// ── Item Prices Tab ──
+function ItemPricesTab() {
+  const { data: rows } = useGetRecipePrices();
+  const upsert = useUpsertRecipePrice();
+  const [edits, setEdits] = useState<Record<string, { invoice: string; retail: string }>>({});
+
+  const handleChange = (recipeId: string, field: "invoice" | "retail", value: string) => {
+    setEdits((prev) => ({
+      ...prev,
+      [recipeId]: { ...(prev[recipeId] || { invoice: "", retail: "" }), [field]: value },
+    }));
+  };
+
+  const handleSave = (recipeId: string) => {
+    const row = edits[recipeId];
+    if (!row) return;
+    const invoicePrice = Number(row.invoice);
+    const retailPrice = Number(row.retail);
+    if (Number.isNaN(invoicePrice) || Number.isNaN(retailPrice)) {
+      toast.error("Please enter valid numbers");
+      return;
+    }
+    upsert.mutate(
+      { data: { recipeId, invoicePricePerPack: invoicePrice, retailPricePerPack: retailPrice } },
+      {
+        onSuccess: () => {
+          toast.success("Price saved");
+          setEdits((prev) => {
+            const next = { ...prev };
+            delete next[recipeId];
+            return next;
+          });
+        },
+      },
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Item Prices</h3>
+        <span className="text-xs text-muted-foreground">
+          Set per-pack invoice and retail prices for every recipe
+        </span>
+      </div>
+
+      <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-[11px]">Recipe</TableHead>
+              <TableHead className="text-[11px]">Product</TableHead>
+              <TableHead className="text-[11px] text-right">Packs / Carton</TableHead>
+              <TableHead className="text-[11px] text-right">Invoice Price / Pack</TableHead>
+              <TableHead className="text-[11px] text-right">Retail Price / Pack</TableHead>
+              <TableHead className="text-[11px] w-[80px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {!rows?.length ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-10 text-sm">
+                  No recipes found.
+                </TableCell>
+              </TableRow>
+            ) : (
+              rows.map((r: any) => {
+                const invoiceVal = edits[r.recipeId]?.invoice ?? (r.invoicePricePerPack != null ? String(r.invoicePricePerPack) : "");
+                const retailVal = edits[r.recipeId]?.retail ?? (r.retailPricePerPack != null ? String(r.retailPricePerPack) : "");
+                const hasChanges = edits[r.recipeId] !== undefined;
+                return (
+                  <TableRow key={r.recipeId}>
+                    <TableCell className="text-sm font-medium">{r.recipeName}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{r.productName}</TableCell>
+                    <TableCell className="text-sm text-right tabular-nums">{r.containersPerCarton}</TableCell>
+                    <TableCell>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="h-8 text-xs text-right pr-2 pl-6"
+                          value={invoiceVal}
+                          onChange={(e) => handleChange(r.recipeId, "invoice", e.target.value)}
+                        />
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-semibold pointer-events-none">
+                          ₨
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="h-8 text-xs text-right pr-2 pl-6"
+                          value={retailVal}
+                          onChange={(e) => handleChange(r.recipeId, "retail", e.target.value)}
+                        />
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-semibold pointer-events-none">
+                          ₨
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        className="h-7 text-[11px]"
+                        disabled={!hasChanges || upsert.isPending}
+                        onClick={() => handleSave(r.recipeId)}
+                      >
+                        {upsert.isPending ? <Loader2 className="size-3 animate-spin" /> : "Save"}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

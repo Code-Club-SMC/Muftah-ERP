@@ -1,11 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import {
-  customerPriceAgreements,
-  promotionalRules,
   salesmen,
   orderBookers,
+  recipePrices,
 } from "@/db/schemas/sales-erp-schema";
+import { recipes } from "@/db/schemas/inventory-schema";
+import { user } from "@/db/schemas/auth-schema";
 import { customers, invoices, invoiceItems } from "@/db/schemas/sales-schema";
 import {
   requireSalesViewMiddleware,
@@ -17,6 +18,7 @@ import {
   createOrderBookerSchema,
   updateOrderBookerSchema,
 } from "@/db/zod_schemas";
+import { createId } from "@paralleldrive/cuid2";
 import { z } from "zod";
 import {
   eq,
@@ -30,179 +32,6 @@ import {
   sum,
   count,
 } from "drizzle-orm";
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CUSTOMER PRICE AGREEMENTS (surfaces existing table)
-// ═══════════════════════════════════════════════════════════════════════════
-
-export const getCustomerPriceAgreementsFn = createServerFn()
-  .middleware([requireSalesConfigViewMiddleware])
-  .inputValidator((input: any) =>
-    z
-      .object({
-        customerId: z.string().optional(),
-        productId: z.string().optional(),
-        includeInactive: z.boolean().default(false),
-      })
-      .parse(input),
-  )
-  .handler(async ({ data }) => {
-    const conditions: any[] = [];
-
-    if (data.customerId) {
-      conditions.push(eq(customerPriceAgreements.customerId, data.customerId));
-    }
-    if (data.productId) {
-      conditions.push(eq(customerPriceAgreements.productId, data.productId));
-    }
-    if (!data.includeInactive) {
-      const now = new Date();
-      conditions.push(
-        and(
-          lte(customerPriceAgreements.effectiveFrom, now),
-          or(
-            isNull(customerPriceAgreements.effectiveTo),
-            gte(customerPriceAgreements.effectiveTo, now),
-          ),
-        ),
-      );
-    }
-
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-    return await db.query.customerPriceAgreements.findMany({
-      where: whereClause,
-      with: {
-        customer: { columns: { id: true, name: true, customerType: true } },
-        product: { columns: { id: true, name: true } },
-      },
-      orderBy: [desc(customerPriceAgreements.effectiveFrom)],
-    });
-  });
-
-export const createCustomerPriceAgreementFn = createServerFn()
-  .middleware([requireSalesConfigManageMiddleware])
-  .inputValidator((input: any) =>
-    z
-      .object({
-        customerId: z.string().min(1),
-        productId: z.string().min(1),
-        pricingType: z.enum(["fixed", "margin_off_tp", "flat_discount"]),
-        agreedValue: z.number().nonnegative(),
-        tpBaseline: z.number().optional(),
-        effectiveFrom: z.string().optional(),
-        effectiveTo: z.string().optional(),
-      })
-      .parse(input),
-  )
-  .handler(async ({ data }) => {
-    const [inserted] = await db
-      .insert(customerPriceAgreements)
-      .values({
-        customerId: data.customerId,
-        productId: data.productId,
-        pricingType: data.pricingType,
-        agreedValue: data.agreedValue.toString(),
-        tpBaseline: data.tpBaseline?.toString() ?? null,
-        effectiveFrom: data.effectiveFrom ? new Date(data.effectiveFrom) : new Date(),
-        effectiveTo: data.effectiveTo ? new Date(data.effectiveTo) : null,
-      })
-      .returning();
-    return inserted;
-  });
-
-export const deleteCustomerPriceAgreementFn = createServerFn()
-  .middleware([requireSalesConfigManageMiddleware])
-  .inputValidator((input: any) => z.object({ id: z.string() }).parse(input))
-  .handler(async ({ data }) => {
-    await db
-      .delete(customerPriceAgreements)
-      .where(eq(customerPriceAgreements.id, data.id));
-    return { success: true };
-  });
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PROMOTIONAL RULES (surfaces existing table)
-// ═══════════════════════════════════════════════════════════════════════════
-
-export const getPromotionalRulesFn = createServerFn()
-  .middleware([requireSalesConfigViewMiddleware])
-  .inputValidator((input: any) =>
-    z
-      .object({
-        productId: z.string().optional(),
-        includeInactive: z.boolean().default(false),
-      })
-      .parse(input),
-  )
-  .handler(async ({ data }) => {
-    const conditions: any[] = [];
-
-    if (data.productId) {
-      conditions.push(eq(promotionalRules.productId, data.productId));
-    }
-    if (!data.includeInactive) {
-      const now = new Date();
-      conditions.push(
-        and(
-          lte(promotionalRules.activeFrom, now),
-          or(
-            isNull(promotionalRules.activeTo),
-            gte(promotionalRules.activeTo, now),
-          ),
-        ),
-      );
-    }
-
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-    return await db.query.promotionalRules.findMany({
-      where: whereClause,
-      with: {
-        product: { columns: { id: true, name: true } },
-      },
-      orderBy: [desc(promotionalRules.activeFrom)],
-    });
-  });
-
-export const createPromotionalRuleFn = createServerFn()
-  .middleware([requireSalesConfigManageMiddleware])
-  .inputValidator((input: any) =>
-    z
-      .object({
-        productId: z.string().min(1),
-        buyQty: z.number().int().positive(),
-        freeQty: z.number().int().nonnegative(),
-        eligibleCustomerType: z
-          .enum(["shopkeeper", "distributor", "retailer", "wholesaler", "all"])
-          .default("all"),
-        activeFrom: z.string().optional(),
-        activeTo: z.string().optional(),
-      })
-      .parse(input),
-  )
-  .handler(async ({ data }) => {
-    const [inserted] = await db
-      .insert(promotionalRules)
-      .values({
-        productId: data.productId,
-        buyQty: data.buyQty,
-        freeQty: data.freeQty,
-        eligibleCustomerType: data.eligibleCustomerType,
-        activeFrom: data.activeFrom ? new Date(data.activeFrom) : new Date(),
-        activeTo: data.activeTo ? new Date(data.activeTo) : null,
-      })
-      .returning();
-    return inserted;
-  });
-
-export const deletePromotionalRuleFn = createServerFn()
-  .middleware([requireSalesConfigManageMiddleware])
-  .inputValidator((input: any) => z.object({ id: z.string() }).parse(input))
-  .handler(async ({ data }) => {
-    await db.delete(promotionalRules).where(eq(promotionalRules.id, data.id));
-    return { success: true };
-  });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SALESMEN (extended fields)
@@ -303,52 +132,6 @@ export const createOrderBookerFn = createServerFn()
       })
       .returning();
     return inserted;
-  });
-
-export const linkOrderBookerToUserFn = createServerFn()
-  .middleware([requireSalesPeopleManageMiddleware])
-  .inputValidator((input: any) =>
-    z
-      .object({
-        orderBookerId: z.string().min(1),
-        userId: z.string().nullable(),
-      })
-      .parse(input),
-  )
-  .handler(async ({ data }) => {
-    const ob = await db.query.orderBookers.findFirst({
-      where: eq(orderBookers.id, data.orderBookerId),
-    });
-    if (!ob) throw new Error("Order booker not found");
-
-    await db
-      .update(orderBookers)
-      .set({ userId: data.userId })
-      .where(eq(orderBookers.id, data.orderBookerId));
-
-    return { success: true };
-  });
-
-export const getOrderBookerEligibleUsersFn = createServerFn()
-  .middleware([requireSalesPeopleManageMiddleware])
-  .handler(async () => {
-    const { userRoleAssignments, appRoles, user: userTable } = await import("@/db");
-
-    const obRole = await db.query.appRoles.findFirst({
-      where: eq(appRoles.slug, "order-booker"),
-    });
-    if (!obRole) return [];
-
-    const assignments = await db.query.userRoleAssignments.findMany({
-      where: eq(userRoleAssignments.roleId, obRole.id),
-      with: { user: true },
-    });
-
-    return assignments.map((a) => ({
-      id: a.userId,
-      name: a.user?.name || "—",
-      email: a.user?.email || "—",
-    }));
   });
 
 export const updateOrderBookerFn = createServerFn()
@@ -526,4 +309,112 @@ export const getCustomersByTypeFn = createServerFn()
       total: Number(total.value),
       pageCount: Math.ceil(Number(total.value) / data.limit),
     };
+  });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RECIPES (restored for backward compatibility)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const getRecipesFn = createServerFn()
+  .middleware([requireSalesConfigViewMiddleware])
+  .handler(async () => {
+    const rows = await db.query.recipes.findMany({
+      with: {
+        product: { columns: { id: true, name: true } },
+      },
+      orderBy: [desc(recipes.createdAt)],
+    });
+    return rows;
+  });
+
+export const getRecipePricesFn = createServerFn()
+  .middleware([requireSalesConfigViewMiddleware])
+  .handler(async () => {
+    const rows = await db.query.recipePrices.findMany({
+      with: {
+        recipe: { columns: { id: true, name: true } },
+      },
+      orderBy: [desc(recipePrices.createdAt)],
+    });
+    return rows;
+  });
+
+export const upsertRecipePriceFn = createServerFn()
+  .middleware([requireSalesConfigManageMiddleware])
+  .inputValidator((input: any) =>
+    z
+      .object({
+        recipeId: z.string().min(1),
+        invoicePricePerPack: z.number().min(0),
+        retailPricePerPack: z.number().min(0),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const updatedById = context.authContext?.session?.user?.id ?? "unknown";
+    const existing = await db.query.recipePrices.findFirst({
+      where: eq(recipePrices.recipeId, data.recipeId),
+    });
+    if (existing) {
+      await db
+        .update(recipePrices)
+        .set({
+          invoicePricePerPack: String(data.invoicePricePerPack),
+          retailPricePerPack: String(data.retailPricePerPack),
+          updatedById,
+          updatedAt: new Date(),
+        })
+        .where(eq(recipePrices.id, existing.id));
+      return { id: existing.id, created: false };
+    } else {
+      const id = createId();
+      await db.insert(recipePrices).values({
+        id,
+        recipeId: data.recipeId,
+        invoicePricePerPack: String(data.invoicePricePerPack),
+        retailPricePerPack: String(data.retailPricePerPack),
+        updatedById,
+      });
+      return { id, created: true };
+    }
+  });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ORDER BOOKER USER LINKING (restored for backward compatibility)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const getOrderBookerEligibleUsersFn = createServerFn()
+  .middleware([requireSalesConfigViewMiddleware])
+  .handler(async () => {
+    const rows = await db.query.user.findMany({
+      where: eq(user.role, "order-booker"),
+      columns: { id: true, name: true, email: true },
+      orderBy: [desc(user.createdAt)],
+    });
+    return rows;
+  });
+
+export const linkOrderBookerToUserFn = createServerFn()
+  .middleware([requireSalesConfigManageMiddleware])
+  .inputValidator((input: any) =>
+    z
+      .object({
+        orderBookerId: z.string().min(1),
+        userId: z.string().nullable(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data }) => {
+    if (data.userId) {
+      const userExists = await db.query.user.findFirst({
+        where: eq(user.id, data.userId),
+        columns: { id: true },
+      });
+      if (!userExists) throw new Error("User not found");
+    }
+    await db
+      .update(orderBookers)
+      .set({ userId: data.userId })
+      .where(eq(orderBookers.id, data.orderBookerId));
+    return { success: true };
   });

@@ -1,1 +1,0 @@
-ALTER TABLE "price_change_log" ADD COLUMN "metadata" jsonb;

@@ -39,6 +39,7 @@ export const getSalariesReportFn = createServerFn()
         daysLeave: payslips.daysLeave,
         basicSalary: payslips.basicSalary,
         incentiveAmount: payslips.incentiveAmount,
+        commissionAmount: payslips.commissionAmount,
         overtimeAmount: payslips.overtimeAmount,
         nightShiftAllowanceAmount: payslips.nightShiftAllowanceAmount,
         bonusAmount: payslips.bonusAmount,

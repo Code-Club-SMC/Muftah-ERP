@@ -40,31 +40,30 @@ function SalariesReportPage() {
   return (
     <ReportPageShell
       title="Salaries Report"
-      subtitle="Itemized payslip data with earnings, deductions, and net pay for the selected period."
+      subtitle="Payslip data with earnings, deductions, and net pay for the selected period."
       onGenerate={handleGenerate}
       isLoading={isLoading}
       isEmpty={isEmpty}
       accentColor={ACCENT}
     >
       {data && (
-        <div className="space-y-10">
+        <div className="space-y-8">
           <section>
             <SectionTitle accentColor={ACCENT}>Period Summary</SectionTitle>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:grid-cols-4">
-              <SummaryCard label="Payslips" value={formatNumber(data.summary.count)} accentColor={ACCENT} delay={0} />
-              <SummaryCard label="Total Gross" value={formatPKR(data.summary.totalGross, false)} accentColor={ACCENT} delay={80} />
-              <SummaryCard label="Total Deductions" value={formatPKR(data.summary.totalDeductions, false)} accentColor={ACCENT} delay={160} />
-              <SummaryCard label="Total Net" value={formatPKR(data.summary.totalNet, false)} accentColor={ACCENT} delay={240} />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:grid-cols-4">
+              <SummaryCard label="Payslips" value={formatNumber(data.summary.count)} accentColor={ACCENT} />
+              <SummaryCard label="Total Gross" value={formatPKR(data.summary.totalGross, false)} accentColor={ACCENT} />
+              <SummaryCard label="Total Deductions" value={formatPKR(data.summary.totalDeductions, false)} accentColor={ACCENT} />
+              <SummaryCard label="Total Net" value={formatPKR(data.summary.totalNet, false)} accentColor={ACCENT} />
             </div>
           </section>
 
           <section>
             <SectionTitle accentColor={ACCENT}>Payslip Detail</SectionTitle>
             <ReportTable
-              accentColor={ACCENT}
               headers={["Employee", "Code", "Designation", "Month", "Present", "Absent", "Basic", "Incentive", "OT", "Bonus", "Gross", "Deductions", "Net"]}
             >
-              {data.payslips.map((p: any) => (
+              {data.payslips.map((p) => (
                 <ReportTableRow key={p.payslipId} accentColor={ACCENT}>
                   <ReportCell bold>{p.employeeName}</ReportCell>
                   <ReportCell mono muted>{p.employeeCode}</ReportCell>
@@ -79,8 +78,8 @@ function SalariesReportPage() {
                   <ReportCell align="right" mono>{formatPKR(p.overtimeAmount, false)}</ReportCell>
                   <ReportCell align="right" mono>{formatPKR(p.bonusAmount, false)}</ReportCell>
                   <ReportCell align="right" mono bold>{formatPKR(p.grossSalary, false)}</ReportCell>
-                  <ReportCell align="right" mono className="text-rose-400/80">{formatPKR(p.totalDeductions, false)}</ReportCell>
-                  <ReportCell align="right" mono bold className="text-blue-400">{formatPKR(p.netSalary, false)}</ReportCell>
+                  <ReportCell align="right" mono className="text-rose-500">{formatPKR(p.totalDeductions, false)}</ReportCell>
+                  <ReportCell align="right" mono bold className="text-blue-500">{formatPKR(p.netSalary, false)}</ReportCell>
                 </ReportTableRow>
               ))}
             </ReportTable>

@@ -1,7 +1,6 @@
 import { ForgotIllustration } from "@/components/illustrations/Forgotllustration";
 import { LoginIllustration } from "@/components/illustrations/LoginIllustration";
 import { ResetIllustration } from "@/components/illustrations/Resetllustration";
-import { VerificationIllustration } from "@/components/illustrations/Verificationllustration";
 import {
   createFileRoute,
   Outlet,
@@ -50,12 +49,6 @@ const authRoutesConfig: Record<string, AuthRouteConfig> = {
     description:
       "Please define a unique and robust password for your system account.",
     illustration: ResetIllustration,
-  },
-  "/email-verification": {
-    title: "Verify Your Identity",
-    description:
-      "A secure verification code has been dispatched to your email address.",
-    illustration: VerificationIllustration,
   },
 };
 

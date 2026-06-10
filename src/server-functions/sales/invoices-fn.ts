@@ -2,12 +2,14 @@ import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { createId } from "@paralleldrive/cuid2";
 import { invoices, invoiceItems, customers } from "@/db/schemas/sales-schema";
-import { customerPriceAgreements, payments, slipRecords, promotionalRules, customerDiscountRules, priceChangeLog } from "@/db/schemas/sales-erp-schema";
+import { payments, slipRecords, discountRules, priceChangeLog } from "@/db/schemas/sales-erp-schema";
 import { finishedGoodsStock } from "@/db/schemas/inventory-schema";
 import { transactions, wallets } from "@/db/schemas/finance-schema";
-import { resolvePrice, type PriceAgreement } from "@/lib/sales/price-engine";
-import type { CustomerDiscountRule } from "@/lib/sales/discount-engine";
-import { evaluateCustomerDiscount } from "@/lib/sales/discount-engine";
+import { resolvePrice } from "@/lib/sales/price-engine";
+import {
+  calculateTotalUnits,
+  calculateTotalInventoryValue,
+} from "@/lib/wac";
 import {
   requireSalesManageMiddleware,
   requireSalesViewMiddleware,
@@ -20,12 +22,12 @@ import {
 } from "date-fns";
 
 /**
- * Returns the effective containers-per-carton for a line item.
- * packsPerCarton = 0 means "use recipe default".
- * Falls back to 1 if both are zero/falsy.
+ * Effective containers-per-carton (CPP).
+ * Always uses the recipe's default containersPerCarton.
+ * Custom pack sizes are blocked to prevent inventory corruption.
  */
-export function effectiveCPP(packsPerCarton: number, recipeContainersPerCarton: number): number {
-  return (packsPerCarton > 0 ? packsPerCarton : recipeContainersPerCarton) || 1;
+export function effectiveCPP(recipeContainersPerCarton: number): number {
+  return recipeContainersPerCarton || 1;
 }
 
 // ── Shared sort config ─────────────────────────────────────────────────────
@@ -38,9 +40,10 @@ const sortFields = {
 
 // ── Helper: build invoice status conditions ────────────────────────────────
 const buildStatusCondition = (status: string): SQL | undefined => {
-  if (status === "paid") return and(eq(invoices.credit, "0"), gt(invoices.cash, "0"));
-  if (status === "credit") return and(eq(invoices.cash, "0"), gt(invoices.credit, "0"));
-  if (status === "partial") return and(gt(invoices.cash, "0"), gt(invoices.credit, "0"));
+  // Use sql`` casts for numeric comparison on decimal columns (avoids "0" vs "0.00" mismatch)
+  if (status === "paid") return and(sql`${invoices.credit} = 0`, sql`${invoices.cash} > 0`);
+  if (status === "credit") return and(sql`${invoices.cash} = 0`, sql`${invoices.credit} > 0`);
+  if (status === "partial") return and(sql`${invoices.cash} > 0`, sql`${invoices.credit} > 0`);
   return undefined;
 };
 
@@ -116,7 +119,10 @@ export const getInvoicesFn = createServerFn()
 
     // Slip number search filter
     if (data.search) {
-      conditions.push(like(invoices.slipNumber, `%${data.search}%`));
+      const safeSearch = data.search.replace(/[%_]/g, "");
+      if (safeSearch) {
+        conditions.push(like(invoices.slipNumber, `%${safeSearch}%`));
+      }
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -176,43 +182,44 @@ export const createInvoiceFn = createServerFn()
         throw new Error("Customer is required to create an invoice.");
       }
 
-      // Fetch pricing agreements + active promo rules + customer discount rules in one go
-      const [agreements, activePromos, activeCustomerDiscountRules] = await Promise.all([
-        tx.query.customerPriceAgreements.findMany({
-          where: eq(customerPriceAgreements.customerId, customerId),
-        }).then((rows) => rows as PriceAgreement[]),
-        tx.query.promotionalRules.findMany({
+      // Fetch customer for default margin
+      const customerRecord = await tx.query.customers.findFirst({
+        where: eq(customers.id, customerId),
+        columns: { defaultMargin: true },
+      });
+      const customerDefaultMargin = customerRecord?.defaultMargin
+        ? Number(customerRecord.defaultMargin)
+        : null;
+
+      // Fetch discount rules for this distributor + recipe prices
+      const [distributorDiscountRules, allRecipePrices] = await Promise.all([
+        tx.query.discountRules.findMany({
           where: and(
-            lte(promotionalRules.activeFrom, new Date()),
-            sql`(${promotionalRules.activeTo} IS NULL OR ${promotionalRules.activeTo} > NOW())`,
-          ),
-        }),
-        tx.query.customerDiscountRules.findMany({
-          where: and(
-            eq(customerDiscountRules.customerId, customerId),
-            lte(customerDiscountRules.effectiveFrom, new Date()),
+            eq(discountRules.customerId, customerId),
+            lte(discountRules.effectiveFrom, new Date()),
             or(
-              isNull(customerDiscountRules.effectiveTo),
-              gte(customerDiscountRules.effectiveTo, new Date())
+              isNull(discountRules.effectiveTo),
+              gte(discountRules.effectiveTo, new Date())
             )
           ),
-        }).then((rows) => rows as CustomerDiscountRule[]),
+        }),
+        tx.query.recipePrices.findMany(),
       ]);
 
-      // Fetch current customer type for promo eligibility check
-      const customer = await tx.query.customers.findFirst({
-        where: eq(customers.id, customerId),
-        columns: { customerType: true },
-      });
-      const customerType = customer?.customerType ?? data.customerType ?? "retailer";
+      const recipePriceMap = new Map(
+        allRecipePrices.map((rp) => [
+          rp.recipeId,
+          Number(rp.invoicePricePerPack),
+        ]),
+      );
 
-      // Cache discount rules by productId for performance (Requirement 15.4)
-      const discountRulesByProduct = new Map<string, CustomerDiscountRule[]>();
-      for (const rule of activeCustomerDiscountRules) {
-        if (!discountRulesByProduct.has(rule.productId)) {
-          discountRulesByProduct.set(rule.productId, []);
+      // Cache discount rules by recipeId for fast lookup
+      const discountRulesByRecipe = new Map<string, typeof distributorDiscountRules>();
+      for (const rule of distributorDiscountRules) {
+        if (!discountRulesByRecipe.has(rule.recipeId)) {
+          discountRulesByRecipe.set(rule.recipeId, []);
         }
-        discountRulesByProduct.get(rule.productId)!.push(rule);
+        discountRulesByRecipe.get(rule.recipeId)!.push(rule);
       }
 
       // ── Single-pass: validate stock + resolve prices + compute totals ─────
@@ -222,15 +229,12 @@ export const createInvoiceFn = createServerFn()
         containersPerCarton: number;
         requestedUnits: number;
         discountUnits: number;
-        promoFreeCartons: number;
+        discountFreeCartons: number;
         totalDispatchedUnits: number;
         finalPerCartonPrice: number;
         tpPrice: number | null;
         marginPercent: number | null;
-        agreementId: string | null;
-        promoRuleId: string | null;
-        customerDiscountRuleId: string | null;
-        customerDiscountAmount: number;
+        discountRuleId: string | null;
         lineAmount: number;
         lineWeightKg: number;
         fillGrams: number;
@@ -256,10 +260,15 @@ export const createInvoiceFn = createServerFn()
           throw new Error(`Stock record not found for "${item.pack}"`);
         }
 
-        const containersPerCarton = effectiveCPP(
-          item.packsPerCarton ?? 0,
-          stock.recipe.containersPerCarton ?? 0,
-        );
+        const containersPerCarton = effectiveCPP(stock.recipe.containersPerCarton ?? 0);
+
+        // Block custom pack sizes to prevent inventory corruption
+        if (item.packsPerCarton && item.packsPerCarton !== containersPerCarton) {
+          throw new Error(
+            `Custom pack sizes are not allowed. Recipe "${item.pack}" uses ${containersPerCarton} per carton, but invoice specifies ${item.packsPerCarton}.`
+          );
+        }
+
         const totalAvailableUnits =
           (stock.quantityCartons ?? 0) * containersPerCarton +
           (stock.quantityContainers ?? 0);
@@ -275,29 +284,26 @@ export const createInvoiceFn = createServerFn()
             ? (item.discountCartons ?? 0) * containersPerCarton
             : 0;
 
-        // ── Promo rule evaluation ────────────────────────────────────────
-        // Find matching active promo for this product
-        let promoFreeCartons = 0;
-        let matchedPromoRuleId: string | null = null;
+        // ── Discount rule evaluation (distributor-specific, buy-N-get-M-free) ──
+        let discountFreeUnits = 0;
+        let matchedDiscountRuleId: string | null = null;
 
-        if (item.unitType === "carton" && stock.recipe.productId) {
-          const matchingPromo = activePromos.find(
-            (p) =>
-              p.productId === stock.recipe.productId &&
-              (p.eligibleCustomerType === "all" ||
-                p.eligibleCustomerType === customerType),
-          );
-          if (matchingPromo && item.numberOfCartons >= matchingPromo.buyQty) {
-            // Floor division: buy 3 get 1 → 6 cartons = 2 free
-            promoFreeCartons =
-              Math.floor(item.numberOfCartons / matchingPromo.buyQty) *
-              matchingPromo.freeQty;
-            matchedPromoRuleId = matchingPromo.id;
+        if (item.unitType === "carton") {
+          const recipeRules = discountRulesByRecipe.get(item.recipeId) || [];
+          // Find the rule with the highest threshold that is met
+          const applicableRule = recipeRules
+            .filter((r) => item.numberOfCartons >= r.quantityThreshold)
+            .sort((a, b) => b.quantityThreshold - a.quantityThreshold)[0];
+
+          if (applicableRule) {
+            discountFreeUnits =
+              Math.floor(item.numberOfCartons / applicableRule.quantityThreshold) *
+              applicableRule.freeUnits;
+            matchedDiscountRuleId = applicableRule.id;
           }
         }
 
-        const promoFreeUnits = promoFreeCartons * containersPerCarton;
-        const totalDiscountUnits = manualDiscountUnits + promoFreeUnits;
+        const totalDiscountUnits = manualDiscountUnits + discountFreeUnits;
         const totalDispatchedUnits = requestedUnits + totalDiscountUnits;
 
         if (totalDispatchedUnits > totalAvailableUnits) {
@@ -312,59 +318,35 @@ export const createInvoiceFn = createServerFn()
         let finalPerCartonPrice = item.perCartonPrice;
         let tpPrice: number | null = null;
         let marginPct: number | null = null;
-        let agreementId: string | null = null;
 
         if (!item.isPriceOverride && stock.recipe.productId) {
-          const perUnitPrice = item.perCartonPrice / containersPerCarton;
+          const configuredPrice = recipePriceMap.get(item.recipeId);
+          const fallbackPrice = stock.recipe.estimatedCostPerContainer
+            ? Number(stock.recipe.estimatedCostPerContainer)
+            : item.perCartonPrice / containersPerCarton;
+          const perUnitPrice = configuredPrice ?? fallbackPrice;
           const resolution = resolvePrice(
             customerId,
             stock.recipe.productId,
             containersPerCarton,
             stock.recipe.containersPerCarton ?? 1,
             perUnitPrice,
-            agreements,
+            customerDefaultMargin,
+            perUnitPrice,
           );
           finalPerCartonPrice = resolution.cartonPrice;
           tpPrice = resolution.tpBaseline;
           marginPct = resolution.marginPercent;
-          agreementId = resolution.agreementId;
         }
 
         const numberOfCartonsToCharge = item.unitType === "carton" ? item.numberOfCartons : 0;
         const numberOfUnitsToCharge = item.unitType === "units" ? item.numberOfUnits : 0;
-        
+
         const cartonsAmount = numberOfCartonsToCharge * finalPerCartonPrice;
         const loosePacksAmount = numberOfUnitsToCharge * (finalPerCartonPrice / containersPerCarton);
-        
-        const baseAmount = cartonsAmount + loosePacksAmount;
-        
-        const promoDiscount = promoFreeCartons * finalPerCartonPrice;
-        const amountAfterPromo = baseAmount - promoDiscount;
-        
-        // ── Customer Discount Evaluation (Requirement 7.1) ──────────────────────
-        let customerDiscountAmount = 0;
-        let customerDiscountRuleId: string | null = null;
-        
-        if (!item.isPriceOverride && stock.recipe.productId) {
-          const cartonEquivalents = item.unitType === "carton"
-            ? item.numberOfCartons
-            : (item.numberOfUnits || 0) / (containersPerCarton || 1);
-          const productDiscountRules = discountRulesByProduct.get(stock.recipe.productId) || [];
-          const discountResolution = evaluateCustomerDiscount(
-            customerId,
-            stock.recipe.productId,
-            cartonEquivalents,
-            finalPerCartonPrice,
-            customerType,
-            productDiscountRules
-          );
-          
-          customerDiscountAmount = discountResolution.discountAmount;
-          customerDiscountRuleId = discountResolution.ruleId;
-        }
-        
-        // Final line amount: base - promo - customer discount, clamped to zero (Requirement 5.5)
-        const lineAmount = Math.max(0, amountAfterPromo - customerDiscountAmount);
+
+        // Free units are NOT charged — they are given away
+        const lineAmount = Math.max(0, cartonsAmount + loosePacksAmount);
 
         totalAmount += lineAmount;
 
@@ -376,21 +358,20 @@ export const createInvoiceFn = createServerFn()
         const lineWeightKg = totalDispatchedUnits * (fillGrams / 1000);
         totalWeightKg += lineWeightKg;
 
+        const discountFreeCartons = Math.floor(discountFreeUnits / containersPerCarton);
+
         lineResolutions.push({
           item,
           stock,
           containersPerCarton,
           requestedUnits,
           discountUnits: totalDiscountUnits,
-          promoFreeCartons,
+          discountFreeCartons,
           totalDispatchedUnits,
           finalPerCartonPrice,
           tpPrice,
           marginPercent: marginPct,
-          agreementId,
-          promoRuleId: matchedPromoRuleId,
-          customerDiscountRuleId,
-          customerDiscountAmount,
+          discountRuleId: matchedDiscountRuleId,
           lineAmount,
           lineWeightKg,
           fillGrams,
@@ -521,11 +502,32 @@ export const createInvoiceFn = createServerFn()
           ? remainingUnits % r.containersPerCarton
           : remainingUnits;
 
+        // Calculate COGS from weighted average cost
+        const wacPerPack = parseFloat(
+          r.stock.weightedAverageCostPerPack?.toString() || "0",
+        );
+        const cogsPerUnit = wacPerPack;
+        const cogsTotal = r.totalDispatchedUnits * cogsPerUnit;
+
+        // Recalculate total inventory value after stock deduction.
+        // WAC per unit stays the same on dispatch; only total value changes.
+        const remainingTotalUnits = calculateTotalUnits(
+          finalQuantityCartons,
+          finalQuantityContainers,
+          r.containersPerCarton,
+        );
+        const newTotalValue = calculateTotalInventoryValue(
+          remainingTotalUnits,
+          wacPerPack,
+        );
+
         await tx
           .update(finishedGoodsStock)
           .set({
             quantityCartons: finalQuantityCartons,
             quantityContainers: finalQuantityContainers,
+            totalInventoryValue: newTotalValue.toFixed(2),
+            updatedAt: new Date(),
           })
           .where(
             and(
@@ -547,9 +549,9 @@ export const createInvoiceFn = createServerFn()
           numberOfCartons:
             r.item.unitType === "carton" ? r.item.numberOfCartons : 0,
           discountCartons: manualDiscountCartons,
-          freeCartons: r.promoFreeCartons,
+          freeCartons: r.discountFreeCartons,
           quantity: r.item.unitType === "units" ? r.item.numberOfUnits : 0,
-          packsPerCarton: r.item.packsPerCarton ?? 0,
+          packsPerCarton: 0,
           actualPackSize: r.containersPerCarton,
           perCartonPrice: r.finalPerCartonPrice.toString(),
           amount: r.lineAmount.toString(),
@@ -561,32 +563,25 @@ export const createInvoiceFn = createServerFn()
           marginPercent:
             r.marginPercent !== null ? r.marginPercent.toString() : null,
           isPriceOverride: r.item.isPriceOverride,
-          priceAgreementId: r.agreementId,
-          promoRuleId: r.promoRuleId,
-          customerDiscountRuleId: r.customerDiscountRuleId,
-          customerDiscountAmount: r.customerDiscountAmount !== undefined 
-            ? r.customerDiscountAmount.toString() 
-            : "0",
+          discountRuleId: r.discountRuleId,
+          costOfGoodsSold: cogsTotal.toFixed(2),
+          costOfGoodsSoldPerUnit: cogsPerUnit.toFixed(4),
         });
 
-        // ── Log pricing decision to audit trail (Task 8.3) ────────────────
-        // Log the pricing decision for this invoice item
-        // Requirement 8.5: Create price_change_log entry with source "invoice_calculation"
+        // ── Log pricing decision to audit trail ────────────────────────────
         if (r.productId) {
           await tx.insert(priceChangeLog).values({
             id: createId(),
             productId: r.productId,
             customerId: customerId,
-            oldPrice: r.item.perCartonPrice.toString(), // Original price before resolution
-            newPrice: r.finalPerCartonPrice.toString(), // Final resolved price
+            oldPrice: r.item.perCartonPrice.toString(),
+            newPrice: r.finalPerCartonPrice.toString(),
             changedById: userId,
             source: "invoice_calculation",
             invoiceId: invoice.id,
             metadata: {
-              priceAgreementId: r.agreementId,
-              promoRuleId: r.promoRuleId,
-              customerDiscountRuleId: r.customerDiscountRuleId,
-              customerDiscountAmount: r.customerDiscountAmount,
+              discountRuleId: r.discountRuleId,
+              freeCartons: r.discountFreeCartons,
               isPriceOverride: r.item.isPriceOverride,
             },
           });
@@ -793,7 +788,7 @@ export const deleteInvoiceFn = createServerFn()
 
         if (!stock) continue;
 
-        const containersPerCarton = effectiveCPP(item.packsPerCarton ?? 0, stock.recipe.containersPerCarton ?? 0);
+        const containersPerCarton = effectiveCPP(stock.recipe.containersPerCarton ?? 0);
         const totalUnitsToRestore =
           item.numberOfCartons * containersPerCarton +
           (item.discountCartons ?? 0) * containersPerCarton +
@@ -807,11 +802,23 @@ export const deleteInvoiceFn = createServerFn()
         const finalQuantityCartons = hasCartons ? Math.floor(newUnits / containersPerCarton) : 0;
         const finalQuantityContainers = hasCartons ? (newUnits % containersPerCarton) : newUnits;
 
+        const wacPerPack = parseFloat(
+          stock.weightedAverageCostPerPack?.toString() || "0",
+        );
+        const totalUnits = calculateTotalUnits(
+          finalQuantityCartons,
+          finalQuantityContainers,
+          containersPerCarton,
+        );
+        const newTotalValue = calculateTotalInventoryValue(totalUnits, wacPerPack);
+
         await tx
           .update(finishedGoodsStock)
           .set({
             quantityCartons: finalQuantityCartons,
             quantityContainers: finalQuantityContainers,
+            totalInventoryValue: newTotalValue.toFixed(2),
+            updatedAt: new Date(),
           })
           .where(
             and(
@@ -821,7 +828,9 @@ export const deleteInvoiceFn = createServerFn()
           );
       }
 
-      // Delete invoice (cascade deletes items)
+      // Delete payments, slip record, then invoice (no cascades on payments/slips)
+      await tx.delete(payments).where(eq(payments.invoiceId, data.id));
+      await tx.delete(slipRecords).where(eq(slipRecords.invoiceId, data.id));
       await tx.delete(invoices).where(eq(invoices.id, data.id));
 
       return { success: true, id: data.id };
@@ -876,11 +885,23 @@ export const updateInvoiceFn = createServerFn()
         const finalQuantityCartons = hasCartons ? Math.floor(restoredUnits / cpp) : 0;
         const finalQuantityContainers = hasCartons ? (restoredUnits % cpp) : restoredUnits;
 
+        const wacPerPack = parseFloat(
+          stock.weightedAverageCostPerPack?.toString() || "0",
+        );
+        const totalUnits = calculateTotalUnits(
+          finalQuantityCartons,
+          finalQuantityContainers,
+          cpp,
+        );
+        const newTotalValue = calculateTotalInventoryValue(totalUnits, wacPerPack);
+
         await tx
           .update(finishedGoodsStock)
           .set({
             quantityCartons: finalQuantityCartons,
             quantityContainers: finalQuantityContainers,
+            totalInventoryValue: newTotalValue.toFixed(2),
+            updatedAt: new Date(),
           })
           .where(
             and(
@@ -910,51 +931,63 @@ export const updateInvoiceFn = createServerFn()
             .set({ balance: sql`${wallets.balance} - ${existing.cash}` })
             .where(eq(wallets.id, existing.account));
             
-          await tx.delete(transactions).where(and(eq(transactions.referenceId, existing.id), eq(transactions.source, "Sale")));
-          await tx.delete(payments).where(and(eq(payments.invoiceId, existing.id), eq(payments.notes, "Initial payment on invoice creation")));
+          await tx.delete(transactions).where(
+            and(
+              eq(transactions.referenceId, existing.id),
+              eq(transactions.source, "Sale"),
+            ),
+          );
+          await tx.delete(payments).where(
+            and(
+              eq(payments.invoiceId, existing.id),
+              eq(payments.notes, "Initial payment on invoice creation"),
+            ),
+          );
       }
 
       // Delete OLD items
       await tx.delete(invoiceItems).where(eq(invoiceItems.invoiceId, existing.id));
 
       // 3. Apply NEW changes (Re-use logic from createInvoiceFn)
-      
-      // Fetch pricing agreements + active promo rules + customer discount rules
-      const [agreements, activePromos, activeCustomerDiscountRules] = await Promise.all([
-        tx.query.customerPriceAgreements.findMany({
-          where: eq(customerPriceAgreements.customerId, customerId),
-        }).then((rows) => rows as PriceAgreement[]),
-        tx.query.promotionalRules.findMany({
+
+      // Fetch customer for default margin
+      const customerRecordUpdate = await tx.query.customers.findFirst({
+        where: eq(customers.id, customerId),
+        columns: { defaultMargin: true },
+      });
+      const customerDefaultMarginUpdate = customerRecordUpdate?.defaultMargin
+        ? Number(customerRecordUpdate.defaultMargin)
+        : null;
+
+      // Fetch discount rules for this distributor + recipe prices
+      const [distributorDiscountRules, allRecipePrices] = await Promise.all([
+        tx.query.discountRules.findMany({
           where: and(
-            lte(promotionalRules.activeFrom, new Date()),
-            sql`(${promotionalRules.activeTo} IS NULL OR ${promotionalRules.activeTo} > NOW())`,
-          ),
-        }),
-        tx.query.customerDiscountRules.findMany({
-          where: and(
-            eq(customerDiscountRules.customerId, customerId),
-            lte(customerDiscountRules.effectiveFrom, new Date()),
+            eq(discountRules.customerId, customerId),
+            lte(discountRules.effectiveFrom, new Date()),
             or(
-              isNull(customerDiscountRules.effectiveTo),
-              gte(customerDiscountRules.effectiveTo, new Date())
+              isNull(discountRules.effectiveTo),
+              gte(discountRules.effectiveTo, new Date())
             )
           ),
-        }).then((rows) => rows as CustomerDiscountRule[]),
+        }),
+        tx.query.recipePrices.findMany(),
       ]);
 
-      const customer = await tx.query.customers.findFirst({
-        where: eq(customers.id, customerId),
-        columns: { customerType: true },
-      });
-      const customerType = customer?.customerType ?? "retailer";
+      const recipePriceMap = new Map(
+        allRecipePrices.map((rp) => [
+          rp.recipeId,
+          Number(rp.invoicePricePerPack),
+        ]),
+      );
 
-      // Cache discount rules by productId for performance (Requirement 15.4)
-      const discountRulesByProduct = new Map<string, CustomerDiscountRule[]>();
-      for (const rule of activeCustomerDiscountRules) {
-        if (!discountRulesByProduct.has(rule.productId)) {
-          discountRulesByProduct.set(rule.productId, []);
+      // Cache discount rules by recipeId for fast lookup
+      const discountRulesByRecipe = new Map<string, typeof distributorDiscountRules>();
+      for (const rule of distributorDiscountRules) {
+        if (!discountRulesByRecipe.has(rule.recipeId)) {
+          discountRulesByRecipe.set(rule.recipeId, []);
         }
-        discountRulesByProduct.get(rule.productId)!.push(rule);
+        discountRulesByRecipe.get(rule.recipeId)!.push(rule);
       }
 
       const lineResolutions: any[] = [];
@@ -972,10 +1005,15 @@ export const updateInvoiceFn = createServerFn()
 
         if (!stock) throw new Error(`Stock record not found for "${item.pack}"`);
 
-        const containersPerCarton = effectiveCPP(
-          item.packsPerCarton ?? 0,
-          stock.recipe.containersPerCarton ?? 0,
-        );
+        const containersPerCarton = effectiveCPP(stock.recipe.containersPerCarton ?? 0);
+
+        // Block custom pack sizes to prevent inventory corruption
+        if (item.packsPerCarton && item.packsPerCarton !== containersPerCarton) {
+          throw new Error(
+            `Custom pack sizes are not allowed. Recipe "${item.pack}" uses ${containersPerCarton} per carton, but invoice specifies ${item.packsPerCarton}.`
+          );
+        }
+
         const totalAvailableUnits =
           (stock.quantityCartons ?? 0) * containersPerCarton +
           (stock.quantityContainers ?? 0);
@@ -990,26 +1028,25 @@ export const updateInvoiceFn = createServerFn()
             ? (item.discountCartons ?? 0) * containersPerCarton
             : 0;
 
-        let promoFreeCartons = 0;
-        let matchedPromoRuleId: string | null = null;
+        // ── Discount rule evaluation (distributor-specific, buy-N-get-M-free) ──
+        let discountFreeUnits = 0;
+        let matchedDiscountRuleId: string | null = null;
 
-        if (item.unitType === "carton" && stock.recipe.productId) {
-          const matchingPromo = activePromos.find(
-            (p) =>
-              p.productId === stock.recipe.productId &&
-              (p.eligibleCustomerType === "all" ||
-                p.eligibleCustomerType === customerType),
-          );
-          if (matchingPromo && item.numberOfCartons >= matchingPromo.buyQty) {
-            promoFreeCartons =
-              Math.floor(item.numberOfCartons / matchingPromo.buyQty) *
-              matchingPromo.freeQty;
-            matchedPromoRuleId = matchingPromo.id;
+        if (item.unitType === "carton") {
+          const recipeRules = discountRulesByRecipe.get(item.recipeId) || [];
+          const applicableRule = recipeRules
+            .filter((r) => item.numberOfCartons >= r.quantityThreshold)
+            .sort((a, b) => b.quantityThreshold - a.quantityThreshold)[0];
+
+          if (applicableRule) {
+            discountFreeUnits =
+              Math.floor(item.numberOfCartons / applicableRule.quantityThreshold) *
+              applicableRule.freeUnits;
+            matchedDiscountRuleId = applicableRule.id;
           }
         }
 
-        const promoFreeUnits = promoFreeCartons * containersPerCarton;
-        const totalDiscountUnits = manualDiscountUnits + promoFreeUnits;
+        const totalDiscountUnits = manualDiscountUnits + discountFreeUnits;
         const totalDispatchedUnits = requestedUnits + totalDiscountUnits;
 
         if (totalDispatchedUnits > totalAvailableUnits) {
@@ -1021,59 +1058,34 @@ export const updateInvoiceFn = createServerFn()
         let finalPerCartonPrice = item.perCartonPrice;
         let tpPrice: number | null = null;
         let marginPct: number | null = null;
-        let agreementId: string | null = null;
 
         if (!item.isPriceOverride && stock.recipe.productId) {
-          const perUnitPrice = item.perCartonPrice / containersPerCarton;
+          const configuredPrice = recipePriceMap.get(item.recipeId);
+          const fallbackPrice = stock.recipe.estimatedCostPerContainer
+            ? Number(stock.recipe.estimatedCostPerContainer)
+            : item.perCartonPrice / containersPerCarton;
+          const perUnitPrice = configuredPrice ?? fallbackPrice;
           const resolution = resolvePrice(
             customerId,
             stock.recipe.productId,
             containersPerCarton,
             stock.recipe.containersPerCarton ?? 1,
             perUnitPrice,
-            agreements,
+            customerDefaultMarginUpdate,
+            perUnitPrice,
           );
           finalPerCartonPrice = resolution.cartonPrice;
           tpPrice = resolution.tpBaseline;
           marginPct = resolution.marginPercent;
-          agreementId = resolution.agreementId;
         }
 
         const numberOfCartonsToCharge = item.unitType === "carton" ? item.numberOfCartons : 0;
         const numberOfUnitsToCharge = item.unitType === "units" ? item.numberOfUnits : 0;
-        
+
         const cartonsAmount = numberOfCartonsToCharge * finalPerCartonPrice;
         const loosePacksAmount = numberOfUnitsToCharge * (finalPerCartonPrice / containersPerCarton);
-        
-        const baseAmount = cartonsAmount + loosePacksAmount;
-        
-        const promoDiscount = promoFreeCartons * finalPerCartonPrice;
-        const amountAfterPromo = baseAmount - promoDiscount;
-        // ── Customer Discount Evaluation (Requirement 7.1) ──────────────────────
-        
-        let customerDiscountAmount = 0;
-        let customerDiscountRuleId: string | null = null;
-        
-        if (!item.isPriceOverride && stock.recipe.productId) {
-          const cartonEquivalents = item.unitType === "carton"
-            ? item.numberOfCartons
-            : (item.numberOfUnits || 0) / (containersPerCarton || 1);
-          const productDiscountRules = discountRulesByProduct.get(stock.recipe.productId) || [];
-          const discountResolution = evaluateCustomerDiscount(
-            customerId,
-            stock.recipe.productId,
-            cartonEquivalents,
-            finalPerCartonPrice,
-            customerType,
-            productDiscountRules
-          );
-          
-          customerDiscountAmount = discountResolution.discountAmount;
-          customerDiscountRuleId = discountResolution.ruleId;
-        }
-        
-        // Final line amount: base - promo - customer discount, clamped to zero (Requirement 5.5)
-        const lineAmount = Math.max(0, amountAfterPromo - customerDiscountAmount);
+
+        const lineAmount = Math.max(0, cartonsAmount + loosePacksAmount);
 
         totalAmount += lineAmount;
 
@@ -1085,29 +1097,35 @@ export const updateInvoiceFn = createServerFn()
         const lineWeightKg = totalDispatchedUnits * (fillGrams / 1000);
         totalWeightKg += lineWeightKg;
 
+        const discountFreeCartons = Math.floor(discountFreeUnits / containersPerCarton);
+
         lineResolutions.push({
           item,
           stock,
           containersPerCarton,
           requestedUnits: requestedUnits,
           discountUnits: totalDiscountUnits,
+          discountFreeCartons,
           totalDispatchedUnits,
           finalPerCartonPrice,
           tpPrice,
           marginPercent: marginPct,
-          agreementId,
-          promoRuleId: matchedPromoRuleId,
-          customerDiscountRuleId,
-          customerDiscountAmount,
+          discountRuleId: matchedDiscountRuleId,
           lineAmount,
           lineWeightKg,
-          promoFreeCartons,
           fillGrams,
           productId: stock.recipe.productId,
         });
       }
 
       const totalPayable = totalAmount + (data.expenses ?? 0);
+
+      if (data.cash > totalPayable) {
+        throw new Error(
+          `Cash received (${data.cash}) cannot exceed total payable (${totalPayable.toFixed(2)})`,
+        );
+      }
+
       const computedCredit = Math.max(0, totalPayable - data.cash);
 
       if (computedCredit > 0 && !data.creditReturnDate) {
@@ -1135,9 +1153,19 @@ export const updateInvoiceFn = createServerFn()
           totalPrice: totalPayable.toString(),
           remarks: data.remarks,
           status: invoiceStatus,
-          performedById: userId, // Record who edited it
+          // performedById intentionally NOT updated — preserves original creator for audit
         })
         .where(eq(invoices.id, data.id));
+
+      // ── Update slip record to reflect new amounts ──────────────────────────
+      await tx
+        .update(slipRecords)
+        .set({
+          amountDue: computedCredit.toString(),
+          amountRecovered: data.cash.toString(),
+          status: computedCredit === 0 ? "closed" : "open",
+        })
+        .where(eq(slipRecords.invoiceId, data.id));
 
       // ── Update wallet credit if cash is paid ──────────────────────────────
       if (data.cash > 0 && data.account) {
@@ -1188,11 +1216,31 @@ export const updateInvoiceFn = createServerFn()
           ? remainingUnits % r.containersPerCarton
           : remainingUnits;
 
+        // Calculate COGS from weighted average cost
+        const wacPerPack = parseFloat(
+          r.stock.weightedAverageCostPerPack?.toString() || "0",
+        );
+        const cogsPerUnit = wacPerPack;
+        const cogsTotal = r.totalDispatchedUnits * cogsPerUnit;
+
+        // Recalculate total inventory value after stock deduction
+        const remainingTotalUnits = calculateTotalUnits(
+          finalQuantityCartons,
+          finalQuantityContainers,
+          r.containersPerCarton,
+        );
+        const newTotalValue = calculateTotalInventoryValue(
+          remainingTotalUnits,
+          wacPerPack,
+        );
+
         await tx
           .update(finishedGoodsStock)
           .set({
             quantityCartons: finalQuantityCartons,
             quantityContainers: finalQuantityContainers,
+            totalInventoryValue: newTotalValue.toFixed(2),
+            updatedAt: new Date(),
           })
           .where(
             and(
@@ -1214,9 +1262,9 @@ export const updateInvoiceFn = createServerFn()
           numberOfCartons:
             r.item.unitType === "carton" ? r.item.numberOfCartons : 0,
           discountCartons: manualDiscountCartons,
-          freeCartons: r.promoFreeCartons,
+          freeCartons: r.discountFreeCartons,
           quantity: r.item.unitType === "units" ? r.item.numberOfUnits : 0,
-          packsPerCarton: r.item.packsPerCarton ?? 0,
+          packsPerCarton: 0,
           actualPackSize: r.containersPerCarton,
           perCartonPrice: r.finalPerCartonPrice.toString(),
           amount: r.lineAmount.toString(),
@@ -1228,12 +1276,9 @@ export const updateInvoiceFn = createServerFn()
           marginPercent:
             r.marginPercent !== null ? r.marginPercent.toString() : null,
           isPriceOverride: r.item.isPriceOverride,
-          priceAgreementId: r.agreementId,
-          promoRuleId: r.promoRuleId,
-          customerDiscountRuleId: r.customerDiscountRuleId,
-          customerDiscountAmount: r.customerDiscountAmount !== undefined 
-            ? r.customerDiscountAmount.toString() 
-            : "0",
+          discountRuleId: r.discountRuleId,
+          costOfGoodsSold: cogsTotal.toFixed(2),
+          costOfGoodsSoldPerUnit: cogsPerUnit.toFixed(4),
         });
 
         // ── Log pricing decision to audit trail (Task 8.3) ────────────────
@@ -1250,10 +1295,8 @@ export const updateInvoiceFn = createServerFn()
             source: "invoice_calculation",
             invoiceId: data.id,
             metadata: {
-              priceAgreementId: r.agreementId,
-              promoRuleId: r.promoRuleId,
-              customerDiscountRuleId: r.customerDiscountRuleId,
-              customerDiscountAmount: r.customerDiscountAmount,
+              discountRuleId: r.discountRuleId,
+              discountFreeCartons: r.discountFreeCartons,
               isPriceOverride: r.item.isPriceOverride,
             },
           });

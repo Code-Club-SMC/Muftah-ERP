@@ -2,11 +2,11 @@ import { redirect } from "@tanstack/react-router";
 import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import {
-  type AuthContext,
   getAuthContext,
   requirePermission,
 } from "./authz.server";
 import type { PermissionKey } from "./rbac";
+import { UnauthorizedError } from "./errors";
 
 const getRequestHref = () => getRequest()?.url ?? undefined;
 
@@ -54,7 +54,11 @@ export const createPermissionMiddleware = (permission: PermissionKey) =>
   createMiddleware()
     .middleware([requireAuthMiddleware])
     .server(async ({ next, context }) => {
-      requirePermission(context.authContext as AuthContext, permission);
+      if (!context.authContext) {
+        throw new UnauthorizedError();
+      }
+
+      requirePermission(context.authContext, permission);
 
       return await next({
         context: {

@@ -42,40 +42,36 @@ function ExpensesReportPage() {
   return (
     <ReportPageShell
       title="Expenses Report"
-      subtitle="Finance expenses and production-related manufacturing costs for the selected period."
+      subtitle="Finance expenses and production costs for the selected period."
       onGenerate={handleGenerate}
       isLoading={isLoading}
       isEmpty={isEmpty}
       accentColor={ACCENT}
     >
       {data && (
-        <div className="space-y-10">
-          {/* Grand Summary */}
+        <div className="space-y-8">
           <section>
             <SectionTitle accentColor={ACCENT}>Period Summary</SectionTitle>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:grid-cols-4">
-              <SummaryCard label="Finance Expenses" value={formatPKR(data.summary.totalFinanceExpenses, false)} accentColor={ACCENT} delay={0} />
-              <SummaryCard label="Production Costs" value={formatPKR(data.summary.totalProductionCosts, false)} accentColor={ACCENT} delay={80} />
-              <SummaryCard label="Grand Total" value={formatPKR(data.summary.grandTotal, false)} accentColor={ACCENT} delay={160} />
-              <SummaryCard label="Records" value={formatNumber(data.summary.financeCount + data.summary.productionCount)} accentColor={ACCENT} delay={240} />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 print:grid-cols-3">
+              <SummaryCard label="Finance Expenses" value={formatPKR(data.summary.totalFinanceExpenses, false)} accentColor={ACCENT} />
+              <SummaryCard label="Production Costs" value={formatPKR(data.summary.totalProductionCosts, false)} accentColor={ACCENT} />
+              <SummaryCard label="Grand Total" value={formatPKR(data.summary.grandTotal, false)} accentColor={ACCENT} />
             </div>
           </section>
 
-          {/* Finance Expenses */}
           <section>
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-1 h-6 rounded-full bg-violet-500" />
-              <h2 className="text-lg font-bold tracking-tight font-[family-name:var(--font-dm-sans)]">General Expenses</h2>
-              <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-wider bg-violet-500/15 text-violet-300 border-0">Finance</Badge>
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-0.5 h-5 rounded bg-violet-500" />
+              <h2 className="text-base font-semibold tracking-tight">General Expenses</h2>
+              <Badge variant="secondary" className="text-[10px]">Finance</Badge>
             </div>
             {data.financeExpenses.length === 0 ? (
-              <EmptySection message="No finance expenses recorded for this period." accentColor={ACCENT} />
+              <EmptySection message="No finance expenses recorded for this period." />
             ) : (
               <ReportTable
-                accentColor={ACCENT}
                 headers={["Date", "Category", "Description", "Wallet", "Slip #", "Amount"]}
               >
-                {data.financeExpenses.map((e: any) => (
+                {data.financeExpenses.map((e) => (
                   <ReportTableRow key={e.expenseId} accentColor={ACCENT}>
                     <ReportCell muted>
                       {e.expenseDate ? new Date(e.expenseDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
@@ -91,21 +87,19 @@ function ExpensesReportPage() {
             )}
           </section>
 
-          {/* Production Costs */}
           <section>
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-1 h-6 rounded-full bg-amber-500" />
-              <h2 className="text-lg font-bold tracking-tight font-[family-name:var(--font-dm-sans)]">Manufacturing Costs</h2>
-              <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-300 border-0">Production</Badge>
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-0.5 h-5 rounded bg-amber-500" />
+              <h2 className="text-base font-semibold tracking-tight">Manufacturing Costs</h2>
+              <Badge variant="secondary" className="text-[10px]">Production</Badge>
             </div>
             {data.productionCosts.length === 0 ? (
-              <EmptySection message="No production costs recorded for this period." accentColor={ACCENT} />
+              <EmptySection message="No production costs recorded for this period." />
             ) : (
               <ReportTable
-                accentColor={ACCENT}
-                headers={["Batch ID", "Completed", "Product", "Recipe", "Warehouse", "Containers", "Chemical Cost", "Packaging Cost", "Total Cost"]}
+                headers={["Batch ID", "Completed", "Product", "Recipe", "Warehouse", "Containers", "Chemical Cost", "Packaging Cost", "Total Cost", "Actual/Pack", "Budget/Pack"]}
               >
-                {data.productionCosts.map((p: any) => (
+                {data.productionCosts.map((p) => (
                   <ReportTableRow key={p.runId} accentColor={ACCENT}>
                     <ReportCell mono bold>{p.batchId}</ReportCell>
                     <ReportCell muted>
@@ -118,6 +112,8 @@ function ExpensesReportPage() {
                     <ReportCell align="right" mono>{formatPKR(p.totalChemicalCost, false)}</ReportCell>
                     <ReportCell align="right" mono>{formatPKR(p.totalPackagingCost, false)}</ReportCell>
                     <ReportCell align="right" mono bold>{formatPKR(p.totalProductionCost, false)}</ReportCell>
+                    <ReportCell align="right" mono>{p.actualCostPerPack > 0 ? formatPKR(p.actualCostPerPack, false) : "—"}</ReportCell>
+                    <ReportCell align="right" mono muted>{formatPKR(p.costPerContainer, false)}</ReportCell>
                   </ReportTableRow>
                 ))}
               </ReportTable>

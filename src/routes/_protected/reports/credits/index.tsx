@@ -41,31 +41,30 @@ function CreditsReportPage() {
   return (
     <ReportPageShell
       title="Credits Report"
-      subtitle="All credit slips, recovery status, and outstanding balances for the selected period."
+      subtitle="Credit slips, recovery status, and outstanding balances for the selected period."
       onGenerate={handleGenerate}
       isLoading={isLoading}
       isEmpty={isEmpty}
       accentColor={ACCENT}
     >
       {data && (
-        <div className="space-y-10">
+        <div className="space-y-8">
           <section>
             <SectionTitle accentColor={ACCENT}>Period Summary</SectionTitle>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:grid-cols-4">
-              <SummaryCard label="Total Slips" value={formatNumber(data.summary.count)} accentColor={ACCENT} delay={0} />
-              <SummaryCard label="Total Due" value={formatPKR(data.summary.totalDue, false)} accentColor={ACCENT} delay={80} />
-              <SummaryCard label="Total Recovered" value={formatPKR(data.summary.totalRecovered, false)} accentColor={ACCENT} delay={160} />
-              <SummaryCard label="Outstanding" value={formatPKR(data.summary.outstanding, false)} accentColor={ACCENT} delay={240} />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:grid-cols-4">
+              <SummaryCard label="Total Slips" value={formatNumber(data.summary.count)} accentColor={ACCENT} />
+              <SummaryCard label="Total Due" value={formatPKR(data.summary.totalDue, false)} accentColor={ACCENT} />
+              <SummaryCard label="Total Recovered" value={formatPKR(data.summary.totalRecovered, false)} accentColor={ACCENT} />
+              <SummaryCard label="Outstanding" value={formatPKR(data.summary.outstanding, false)} accentColor={ACCENT} />
             </div>
           </section>
 
           <section>
             <SectionTitle accentColor={ACCENT}>Credit Slips</SectionTitle>
             <ReportTable
-              accentColor={ACCENT}
               headers={["Slip #", "Issued", "Customer", "Type", "Salesman", "Status", "Recovery", "Due", "Recovered", "Balance"]}
             >
-              {data.slips.map((slip: any) => (
+              {data.slips.map((slip) => (
                 <ReportTableRow key={slip.slipId} accentColor={ACCENT}>
                   <ReportCell mono>{slip.slipNumber}</ReportCell>
                   <ReportCell muted>
@@ -75,18 +74,18 @@ function CreditsReportPage() {
                   <ReportCell muted className="capitalize">{slip.customerType}</ReportCell>
                   <ReportCell>{slip.salesmanName || "—"}</ReportCell>
                   <ReportCell>
-                    <Badge variant={slip.status === "closed" ? "default" : "secondary"} className="text-[9px] font-bold uppercase tracking-wider">
+                    <Badge variant={slip.status === "closed" ? "default" : "secondary"} className="text-[10px]">
                       {slip.status}
                     </Badge>
                   </ReportCell>
                   <ReportCell>
-                    <Badge variant={slip.recoveryStatus === "resolved" ? "default" : "outline"} className="text-[9px] font-bold uppercase tracking-wider">
+                    <Badge variant={slip.recoveryStatus === "resolved" ? "default" : "outline"} className="text-[10px]">
                       {slip.recoveryStatus || "pending"}
                     </Badge>
                   </ReportCell>
                   <ReportCell align="right" mono>{formatPKR(slip.amountDue, false)}</ReportCell>
                   <ReportCell align="right" mono>{formatPKR(slip.amountRecovered, false)}</ReportCell>
-                  <ReportCell align="right" mono bold className={slip.amountDue - slip.amountRecovered > 0 ? "text-rose-400" : ""}>
+                  <ReportCell align="right" mono bold className={slip.amountDue - slip.amountRecovered > 0 ? "text-rose-500" : ""}>
                     {formatPKR(slip.amountDue - slip.amountRecovered, false)}
                   </ReportCell>
                 </ReportTableRow>

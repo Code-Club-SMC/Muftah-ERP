@@ -6,6 +6,8 @@ import {
   appRolePermissions,
   appRoles,
   db,
+  employees,
+  orderBookers,
   userRoleAssignments,
 } from "@/db";
 import {
@@ -63,6 +65,7 @@ const managedUserSchema = z.object({
   email: z.string().email("Enter a valid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   roleSlug: roleSlugSchema,
+  orderBookerId: z.string().optional(),
 });
 
 const updateManagedUserSchema = z.object({
@@ -240,9 +243,44 @@ export const getUserManagementOverviewFn = createServerFn()
       }),
     );
 
+    const onboardingOrderBookers = await db.query.orderBookers.findMany({
+      where: (ob, { and, isNull, eq }) =>
+        and(isNull(ob.userId), eq(ob.status, "active")),
+      orderBy: [asc(orderBookers.name)],
+    });
+
+    const employeeIds = onboardingOrderBookers
+      .map((ob) => ob.employeeId)
+      .filter((id): id is string => Boolean(id));
+    const employeeStatusById = new Map<string, string>();
+
+    if (employeeIds.length > 0) {
+      const employeeRows = await db.query.employees.findMany({
+        where: (employee, { inArray }) => inArray(employee.id, employeeIds),
+        columns: {
+          id: true,
+          status: true,
+        },
+      });
+
+      for (const employee of employeeRows) {
+        employeeStatusById.set(employee.id, employee.status);
+      }
+    }
+
     return {
       currentUserId: context.session.user.id,
       users,
+      onboardingOrderBookers: onboardingOrderBookers.map((ob) => ({
+        id: ob.id,
+        name: ob.name,
+        phone: ob.phone,
+        assignedArea: ob.assignedArea,
+        employeeId: ob.employeeId,
+        employeeStatus: ob.employeeId
+          ? (employeeStatusById.get(ob.employeeId) ?? null)
+          : null,
+      })),
       roles,
       permissions: PERMISSION_DEFINITIONS,
       landingPathOptions: [...LANDING_PATH_OPTIONS],
@@ -425,6 +463,52 @@ export const createManagedUserFn = createServerFn()
       throw new Error("Archived roles cannot be assigned to new users.");
     }
 
+    let pendingOrderBooker:
+      | {
+          id: string;
+          status: string;
+          userId: string | null;
+          employeeId: string | null;
+        }
+      | null = null;
+
+    if (data.orderBookerId) {
+      pendingOrderBooker = await db.query.orderBookers.findFirst({
+        where: eq(orderBookers.id, data.orderBookerId),
+        columns: {
+          id: true,
+          status: true,
+          userId: true,
+          employeeId: true,
+        },
+      }) ?? null;
+
+      if (!pendingOrderBooker) {
+        throw new Error("Selected order booker profile was not found.");
+      }
+
+      if (pendingOrderBooker.userId) {
+        throw new Error("Selected order booker profile is already linked to a user.");
+      }
+
+      if (pendingOrderBooker.status !== "active") {
+        throw new Error("Selected order booker profile is inactive.");
+      }
+
+      if (pendingOrderBooker.employeeId) {
+        const employee = await db.query.employees.findFirst({
+          where: eq(employees.id, pendingOrderBooker.employeeId),
+          columns: {
+            status: true,
+          },
+        });
+
+        if (!employee || employee.status !== "active") {
+          throw new Error("Selected order booker is not an active employee.");
+        }
+      }
+    }
+
     const createUser = getAdminMethod("createUser");
     const result = await createUser({
       headers: getRequestHeaders(),
@@ -442,6 +526,15 @@ export const createManagedUserFn = createServerFn()
     }
 
     await syncUserRoleAssignment(createdUserId, role.slug, context.session.user.id);
+
+    if (pendingOrderBooker) {
+      await db
+        .update(orderBookers)
+        .set({
+          userId: createdUserId,
+        })
+        .where(eq(orderBookers.id, pendingOrderBooker.id));
+    }
 
     return { success: true };
   });
@@ -486,12 +579,19 @@ export const banManagedUserFn = createServerFn()
   .inputValidator(banUserSchema)
   .handler(async ({ data }) => {
     const banUser = getAdminMethod("banUser");
+    const revokeUserSessions = getAdminMethod("revokeUserSessions");
     await banUser({
       headers: getRequestHeaders(),
       body: {
         userId: data.userId,
         banReason: data.reason,
         banExpiresIn: data.duration,
+      },
+    });
+    await revokeUserSessions({
+      headers: getRequestHeaders(),
+      body: {
+        userId: data.userId,
       },
     });
 

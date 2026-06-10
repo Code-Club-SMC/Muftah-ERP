@@ -1,10 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { user } from "@/db/schemas/auth-schema";
-import { requireAuthMiddleware } from "@/lib/middlewares";
+import { requireManufacturingViewMiddleware } from "@/lib/middlewares";
 
 export const getOperatorsFn = createServerFn()
-  .middleware([requireAuthMiddleware])
+  .middleware([requireManufacturingViewMiddleware])
   .handler(async () => {
     // Return all users for now. You could filter by role if needed.
     const operators = await db

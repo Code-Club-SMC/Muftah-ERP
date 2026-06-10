@@ -61,12 +61,12 @@ export const EmployeesTable = ({ data }: Props) => {
       ),
     },
     {
-      accessorKey: "standardSalary",
-      header: "Standard Salary",
+      accessorKey: "basicSalary",
+      header: "Basic Salary",
       cell: ({ row }) => (
-        <span>
-          PKR {parseFloat(row.original.standardSalary || "0").toLocaleString()}
-        </span>
+        <div className="text-right font-medium">
+          PKR {parseFloat(row.original.basicSalary || "0").toLocaleString()}
+        </div>
       ),
     },
     {

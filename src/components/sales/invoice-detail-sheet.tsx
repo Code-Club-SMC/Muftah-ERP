@@ -121,11 +121,11 @@ const InvoiceDetailContent = ({
       <div className="py-4">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-lg font-bold">Edit Invoice</h2>
+            <h1 className="text-lg font-bold">Edit Invoice</h1>
             <p className="text-xs text-muted-foreground">Modify items, prices, or payment details</p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setIsEditing(false)} className="gap-1">
-            <X className="size-3.5" />
+          <Button variant="outline" size="sm" onClick={() => setIsEditing(false)} className="gap-1" aria-label="Cancel editing invoice">
+            <X className="size-3.5" aria-hidden="true" />
             Cancel Edit
           </Button>
         </div>
@@ -153,28 +153,28 @@ const InvoiceDetailContent = ({
       {/* Header info */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="flex items-center gap-2">
-          <Calendar className="size-4 text-muted-foreground" />
+          <Calendar className="size-4 text-muted-foreground" aria-hidden="true" />
           <div>
             <p className="text-[10px] text-muted-foreground uppercase">Date</p>
             <p className="text-sm font-medium">{format(new Date(invoice.date), "dd MMM yyyy")}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <User className="size-4 text-muted-foreground" />
+          <User className="size-4 text-muted-foreground" aria-hidden="true" />
           <div>
             <p className="text-[10px] text-muted-foreground uppercase">Customer</p>
             <p className="text-sm font-medium">{invoice.customer?.name || "N/A"}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <MapPin className="size-4 text-muted-foreground" />
+          <MapPin className="size-4 text-muted-foreground" aria-hidden="true" />
           <div>
             <p className="text-[10px] text-muted-foreground uppercase">Warehouse</p>
             <p className="text-sm font-medium">{invoice.warehouse?.name || "N/A"}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <DollarSign className="size-4 text-muted-foreground" />
+          <DollarSign className="size-4 text-muted-foreground" aria-hidden="true" />
           <div>
             <p className="text-[10px] text-muted-foreground uppercase">Total</p>
             <p className="text-sm font-bold">{PKR(total)}</p>
@@ -218,8 +218,8 @@ const InvoiceDetailContent = ({
       {/* Line items table */}
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <Package className="size-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold">Line Items ({invoice.items?.length || 0})</h3>
+          <Package className="size-4 text-muted-foreground" aria-hidden="true" />
+          <h2 className="text-sm font-semibold">Line Items ({invoice.items?.length || 0})</h2>
         </div>
         <div className="rounded-lg border border-border/60 overflow-hidden">
           <Table>

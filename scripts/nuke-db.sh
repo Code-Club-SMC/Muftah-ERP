@@ -884,7 +884,7 @@ verify_connection() {
 generate_migrations() {
     log_step "Checking migration status"
     
-    local migration_dir="$PROJECT_ROOT/src/db/mirgrations"
+    local migration_dir="$PROJECT_ROOT/src/db/migrations"
     
     if [ ! -d "$migration_dir" ] || [ -z "$(ls -A "$migration_dir" 2>/dev/null)" ]; then
         log_info "No migrations detected - generating..."

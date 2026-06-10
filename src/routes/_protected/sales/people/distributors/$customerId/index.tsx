@@ -1,23 +1,14 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
-import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableHead,
-  TableRow,
-  TableCell,
-} from "@/components/ui/table";
 import { ChevronLeft, AlertCircle, BookOpen, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { getCustomerProfileFn } from "@/server-functions/sales/sales-config-fn";
-import { useGetCustomerPriceAgreements } from "@/hooks/sales/use-sales-config";
+
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { updateCustomerFn } from "@/server-functions/sales/customers-fn";
 import { toast } from "sonner";
@@ -38,8 +29,6 @@ function DistributorProfilePage() {
     queryKey: ["distributor-profile", customerId],
     queryFn: () => getCustomerProfileFn({ data: { id: customerId } }),
   });
-
-  const { data: priceAgreements } = useGetCustomerPriceAgreements({ customerId });
 
   const updateMutation = useMutation({
     mutationFn: updateCustomerFn,
@@ -127,7 +116,7 @@ function DistributorProfilePage() {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold">Default Margin</h3>
-            <p className="text-xs text-muted-foreground">Applied to all products when no specific price agreement exists.</p>
+            <p className="text-xs text-muted-foreground">Applied to all products for this distributor.</p>
           </div>
           {editingMargin ? (
             <div className="flex items-center gap-2">
@@ -162,42 +151,6 @@ function DistributorProfilePage() {
         </div>
       </div>
 
-      {/* Price Agreements */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-semibold">Per-Product Pricing Agreements</h3>
-        <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-[11px]">Product</TableHead>
-                <TableHead className="text-[11px]">Type</TableHead>
-                <TableHead className="text-[11px] text-right">Value</TableHead>
-                <TableHead className="text-[11px]">Effective</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {!priceAgreements?.length ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8 text-sm">
-                    No specific price agreements. Default margin applies.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                priceAgreements.map((a: any) => (
-                  <TableRow key={a.id}>
-                    <TableCell className="text-sm">{a.product?.name}</TableCell>
-                    <TableCell className="text-sm capitalize">{a.pricingType.replace(/_/g, " ")}</TableCell>
-                    <TableCell className="text-sm text-right tabular-nums">{PKR(Number(a.agreedValue))}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {format(new Date(a.effectiveFrom), "dd MMM yyyy")}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
     </div>
   );
 }

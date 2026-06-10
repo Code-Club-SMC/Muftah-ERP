@@ -1,3 +1,8 @@
+/**
+ * Enhanced Credit Recovery Server Functions
+ * Removed auto-assignment, manual status control, professional escalation
+ */
+
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { createId } from "@paralleldrive/cuid2";
@@ -25,7 +30,6 @@ import {
 // ═══════════════════════════════════════════════════════════════════════════
 // GET DUE TODAY SLIPS
 // All non-closed slips where invoice creditReturnDate <= today.
-// Includes both amountDue === 0 (needs closing) and amountDue > 0.
 // ═══════════════════════════════════════════════════════════════════════════
 export const getDueTodaySlipsFn = createServerFn()
   .middleware([requireSalesRecoveryViewMiddleware])
@@ -39,7 +43,6 @@ export const getDueTodaySlipsFn = createServerFn()
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
-    // Find invoice IDs due today or earlier
     const dueInvoices = await db
       .select({ id: invoices.id })
       .from(invoices)
@@ -80,8 +83,6 @@ export const getDueTodaySlipsFn = createServerFn()
             customerType: true,
           },
         },
-        salesman: { columns: { id: true, name: true } },
-        recoveryAssignedTo: { columns: { id: true, name: true } },
       },
       orderBy: [asc(slipRecords.issuedAt)],
       limit: data.limit,
@@ -112,7 +113,6 @@ export const getRecoveryQueueFn = createServerFn()
   .inputValidator((input: any) =>
     z.object({
       recoveryStatus: z.enum(["pending", "in_progress", "partially_paid", "overdue", "defaulted"]).optional(),
-      assignedToId: z.string().optional(),
       escalationLevel: z.number().int().min(0).optional(),
       page: z.number().int().positive().default(1),
       limit: z.number().int().positive().default(50),
@@ -123,9 +123,6 @@ export const getRecoveryQueueFn = createServerFn()
 
     if (data.recoveryStatus) {
       conditions.push(eq(slipRecords.recoveryStatus, data.recoveryStatus));
-    }
-    if (data.assignedToId) {
-      conditions.push(eq(slipRecords.recoveryAssignedToId, data.assignedToId));
     }
     if (data.escalationLevel !== undefined) {
       conditions.push(eq(slipRecords.escalationLevel, data.escalationLevel));
@@ -154,8 +151,6 @@ export const getRecoveryQueueFn = createServerFn()
             customerType: true,
           },
         },
-        salesman: { columns: { id: true, name: true } },
-        recoveryAssignedTo: { columns: { id: true, name: true } },
       },
       orderBy: [asc(slipRecords.nextFollowUpDate)],
       limit: data.limit,
@@ -227,48 +222,35 @@ export const getRecoverySummaryFn = createServerFn()
   });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ASSIGN RECOVERY PERSON
-// If no person given, auto-assign to slip's original salesman.
+// ASSIGN RECOVERY PERSON (Manual Assignment)
+// Users manually assign a recovery person to a slip. No auto-assignment.
 // ═══════════════════════════════════════════════════════════════════════════
 export const assignRecoveryPersonFn = createServerFn()
   .middleware([requireSalesRecoveryManageMiddleware])
   .inputValidator((input: any) =>
     z.object({
       slipId: z.string().min(1),
-      recoveryAssignedToId: z.string().optional(),
+      recoveryAssignedToId: z.string().min(1),
     }).parse(input),
   )
   .handler(async ({ data }) => {
-    const slip = await db.query.slipRecords.findFirst({
-      where: eq(slipRecords.id, data.slipId),
-    });
-
-    if (!slip) throw new Error("Slip not found");
-    if (slip.status === "closed") throw new Error("Slip is already closed");
-
-    const assignToId = data.recoveryAssignedToId ?? slip.salesmanId;
-
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
-
     const [updated] = await db
       .update(slipRecords)
       .set({
-        recoveryAssignedToId: assignToId,
-        recoveryStatus: "in_progress",
-        nextFollowUpDate: tomorrow,
+        recoveryAssignedToId: data.recoveryAssignedToId,
         updatedAt: new Date(),
       })
       .where(eq(slipRecords.id, data.slipId))
       .returning();
 
+    if (!updated) throw new Error("Slip not found");
     return updated;
   });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// UPDATE RECOVERY STATUS
-// Any authorized user can set any status including defaulted.
+// UPDATE RECOVERY STATUS (Manual Control)
+// Any authorized user can set any status at any time.
+// Removed auto-assignment - status is purely manual.
 // ═══════════════════════════════════════════════════════════════════════════
 export const updateRecoveryStatusFn = createServerFn()
   .middleware([requireSalesRecoveryManageMiddleware])
@@ -276,6 +258,7 @@ export const updateRecoveryStatusFn = createServerFn()
     z.object({
       slipId: z.string().min(1),
       recoveryStatus: z.enum(["pending", "in_progress", "partially_paid", "overdue", "defaulted"]),
+      notes: z.string().optional(),
     }).parse(input),
   )
   .handler(async ({ data }) => {
@@ -293,6 +276,72 @@ export const updateRecoveryStatusFn = createServerFn()
   });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ESCALATE RECOVERY (Manual Control)
+// Increments escalationLevel. Status is NOT auto-changed.
+// Users must manually update status if needed.
+// ═══════════════════════════════════════════════════════════════════════════
+export const escalateRecoveryFn = createServerFn()
+  .middleware([requireSalesRecoveryManageMiddleware])
+  .inputValidator((input: any) =>
+    z.object({
+      slipId: z.string().min(1),
+      reason: z.string().min(1, "Escalation reason is required"),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const slip = await db.query.slipRecords.findFirst({
+      where: eq(slipRecords.id, data.slipId),
+    });
+
+    if (!slip) throw new Error("Slip not found");
+
+    const newLevel = (slip.escalationLevel ?? 0) + 1;
+
+    const [updated] = await db
+      .update(slipRecords)
+      .set({
+        escalationLevel: newLevel,
+        updatedAt: new Date(),
+      })
+      .where(eq(slipRecords.id, data.slipId))
+      .returning();
+
+    return updated;
+  });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DE-ESCALATE RECOVERY
+// Decrements escalationLevel (minimum 0).
+// ═══════════════════════════════════════════════════════════════════════════
+export const deEscalateRecoveryFn = createServerFn()
+  .middleware([requireSalesRecoveryManageMiddleware])
+  .inputValidator((input: any) =>
+    z.object({
+      slipId: z.string().min(1),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const slip = await db.query.slipRecords.findFirst({
+      where: eq(slipRecords.id, data.slipId),
+    });
+
+    if (!slip) throw new Error("Slip not found");
+
+    const newLevel = Math.max(0, (slip.escalationLevel ?? 0) - 1);
+
+    const [updated] = await db
+      .update(slipRecords)
+      .set({
+        escalationLevel: newLevel,
+        updatedAt: new Date(),
+      })
+      .where(eq(slipRecords.id, data.slipId))
+      .returning();
+
+    return updated;
+  });
+
+// ═══════════════════════════════════════════════════════════════════════════
 // CREATE RECOVERY ATTEMPT
 // Logs an attempt. Auto-updates lastFollowUpDate and nextFollowUpDate.
 // ═══════════════════════════════════════════════════════════════════════════
@@ -305,7 +354,7 @@ export const createRecoveryAttemptFn = createServerFn()
       attemptMethod: z.enum(["call", "visit", "whatsapp", "letter", "other"]).default("call"),
       attemptOutcome: z.enum(["no_answer", "promised", "partial_payment", "refused", "unreachable", "resolved"]).default("no_answer"),
       amountPromised: z.number().nonnegative().optional(),
-      promisedDate: z.date().optional(),
+      promisedDate: z.string().optional(), // ISO date string
       notes: z.string().optional(),
     }).parse(input),
   )
@@ -315,16 +364,14 @@ export const createRecoveryAttemptFn = createServerFn()
     });
     if (!slip) throw new Error("Slip not found");
 
-    const assignedToId = data.assignedToId ?? slip.recoveryAssignedToId ?? slip.salesmanId ?? null;
-
     const attempt = await db.insert(creditRecoveryAttempts).values({
       id: createId(),
       slipId: data.slipId,
-      assignedToId,
+      assignedToId: data.assignedToId || null,
       attemptMethod: data.attemptMethod,
       attemptOutcome: data.attemptOutcome,
       amountPromised: data.amountPromised?.toString(),
-      promisedDate: data.promisedDate,
+      promisedDate: data.promisedDate ? new Date(data.promisedDate) : null,
       notes: data.notes,
       attemptedAt: new Date(),
     }).returning();
@@ -370,89 +417,49 @@ export const getRecoveryAttemptsFn = createServerFn()
   });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ESCALATE RECOVERY
-// Increments escalationLevel. If >= 2, auto-set status to overdue.
+// GET SLIP DETAIL
+// Full slip information for escalation sheet.
 // ═══════════════════════════════════════════════════════════════════════════
-export const escalateRecoveryFn = createServerFn()
-  .middleware([requireSalesRecoveryManageMiddleware])
+export const getSlipDetailFn = createServerFn()
+  .middleware([requireSalesRecoveryViewMiddleware])
   .inputValidator((input: any) =>
     z.object({ slipId: z.string().min(1) }).parse(input),
   )
   .handler(async ({ data }) => {
     const slip = await db.query.slipRecords.findFirst({
       where: eq(slipRecords.id, data.slipId),
+      with: {
+        invoice: {
+          columns: {
+            id: true,
+            date: true,
+            totalPrice: true,
+            cash: true,
+            credit: true,
+            creditReturnDate: true,
+            slipNumber: true,
+          },
+        },
+        customer: {
+          columns: {
+            id: true,
+            name: true,
+            city: true,
+            mobileNumber: true,
+            customerType: true,
+          },
+        },
+      },
     });
 
     if (!slip) throw new Error("Slip not found");
 
-    const newLevel = (slip.escalationLevel ?? 0) + 1;
-    const newStatus = newLevel >= 2 ? "overdue" : slip.recoveryStatus;
-
-    const [updated] = await db
-      .update(slipRecords)
-      .set({
-        escalationLevel: newLevel,
-        recoveryStatus: newStatus ?? "overdue",
-        updatedAt: new Date(),
-      })
-      .where(eq(slipRecords.id, data.slipId))
-      .returning();
-
-    return updated;
-  });
-
-// ═══════════════════════════════════════════════════════════════════════════
-// AUTO-ASSIGN OVERDUE SLIPS
-// Batch: finds non-closed slips past due date with no recovery status,
-// auto-assigns each to its original salesman with status 'pending'.
-// ═══════════════════════════════════════════════════════════════════════════
-export const autoAssignOverdueSlipsFn = createServerFn()
-  .middleware([requireSalesRecoveryManageMiddleware])
-  .inputValidator((input: any) => z.object({}).parse(input))
-  .handler(async () => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    const overdueInvoices = await db
-      .select({ id: invoices.id })
-      .from(invoices)
-      .where(and(
-        isNotNull(invoices.creditReturnDate),
-        lt(invoices.creditReturnDate, todayStart),
-      ));
-    const overdueInvoiceIds = overdueInvoices.map((i) => i.id);
-
-    if (overdueInvoiceIds.length === 0) {
-      return { assignedCount: 0 };
-    }
-
-    const unassignedSlips = await db.query.slipRecords.findMany({
-      where: and(
-        ne(slipRecords.status, "closed"),
-        inArray(slipRecords.invoiceId, overdueInvoiceIds),
-        isNull(slipRecords.recoveryStatus),
-      ),
+    // Get recovery attempts
+    const attempts = await db.query.creditRecoveryAttempts.findMany({
+      where: eq(creditRecoveryAttempts.slipId, data.slipId),
+      orderBy: [desc(creditRecoveryAttempts.attemptedAt)],
+      limit: 10,
     });
 
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
-
-    let assignedCount = 0;
-
-    for (const slip of unassignedSlips) {
-      if (!slip.salesmanId) continue;
-      await db
-        .update(slipRecords)
-        .set({
-          recoveryAssignedToId: slip.salesmanId,
-          recoveryStatus: "pending",
-          nextFollowUpDate: tomorrow,
-          updatedAt: new Date(),
-        })
-        .where(eq(slipRecords.id, slip.id));
-      assignedCount++;
-    }
-
-    return { assignedCount };
+    return { slip, attempts };
   });

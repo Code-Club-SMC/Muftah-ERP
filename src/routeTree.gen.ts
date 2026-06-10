@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as ProtectedRouteRouteImport } from './routes/_protected/route'
 import { Route as AuthLayoutRouteRouteImport } from './routes/_authLayout/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as InvestorIndexRouteImport } from './routes/investor/index'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ProtectedReportsRouteRouteImport } from './routes/_protected/reports/route'
 import { Route as ProtectedUserManagementIndexRouteImport } from './routes/_protected/user-management/index'
@@ -71,11 +70,13 @@ import { Route as ProtectedHrPayrollEmployeeIndexRouteImport } from './routes/_p
 import { Route as ProtectedFinanceExpensesSettingsIndexRouteImport } from './routes/_protected/finance/expenses/settings/index'
 import { Route as ProtectedInventoryFactoryFloorCartonsRecipeIdRouteImport } from './routes/_protected/inventory/factory-floor/cartons/$recipeId'
 import { Route as ProtectedHrPayrollEmployeeEmployeeIdRouteImport } from './routes/_protected/hr/payroll/employee/$employeeId'
+import { Route as ProtectedSalesPeopleShopkeepersCustomerIdIndexRouteImport } from './routes/_protected/sales/people/shopkeepers/$customerId/index'
 import { Route as ProtectedSalesPeopleSalesmenSalesmanIdIndexRouteImport } from './routes/_protected/sales/people/salesmen/$salesmanId/index'
 import { Route as ProtectedSalesPeopleOrderBookersOrderBookerIdIndexRouteImport } from './routes/_protected/sales/people/order-bookers/$orderBookerId/index'
 import { Route as ProtectedSalesPeopleDistributorsCustomerIdIndexRouteImport } from './routes/_protected/sales/people/distributors/$customerId/index'
 import { Route as ProtectedManufacturingProductionsRunIdCartonsIndexRouteImport } from './routes/_protected/manufacturing/productions/$runId/cartons/index'
 import { Route as ProtectedInventoryItemItemTypeItemIdIndexRouteImport } from './routes/_protected/inventory/item/$itemType/$itemId/index'
+import { Route as ProtectedSalesPeopleShopkeepersCustomerIdLedgerRouteImport } from './routes/_protected/sales/people/shopkeepers/$customerId/ledger'
 import { Route as ProtectedSalesPeopleSalesmenSalesmanIdLedgerRouteImport } from './routes/_protected/sales/people/salesmen/$salesmanId/ledger'
 import { Route as ProtectedSalesPeopleDistributorsCustomerIdLedgerRouteImport } from './routes/_protected/sales/people/distributors/$customerId/ledger'
 import { Route as ProtectedSalesPeopleSalesmenSalesmanIdShopsCustomerIdRouteImport } from './routes/_protected/sales/people/salesmen/$salesmanId/shops/$customerId'
@@ -91,11 +92,6 @@ const AuthLayoutRouteRoute = AuthLayoutRouteRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InvestorIndexRoute = InvestorIndexRouteImport.update({
-  id: '/investor/',
-  path: '/investor/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
@@ -433,6 +429,12 @@ const ProtectedHrPayrollEmployeeEmployeeIdRoute =
     path: '/hr/payroll/employee/$employeeId',
     getParentRoute: () => ProtectedRouteRoute,
   } as any)
+const ProtectedSalesPeopleShopkeepersCustomerIdIndexRoute =
+  ProtectedSalesPeopleShopkeepersCustomerIdIndexRouteImport.update({
+    id: '/sales/people/shopkeepers/$customerId/',
+    path: '/sales/people/shopkeepers/$customerId/',
+    getParentRoute: () => ProtectedRouteRoute,
+  } as any)
 const ProtectedSalesPeopleSalesmenSalesmanIdIndexRoute =
   ProtectedSalesPeopleSalesmenSalesmanIdIndexRouteImport.update({
     id: '/sales/people/salesmen/$salesmanId/',
@@ -463,6 +465,12 @@ const ProtectedInventoryItemItemTypeItemIdIndexRoute =
     path: '/inventory/item/$itemType/$itemId/',
     getParentRoute: () => ProtectedRouteRoute,
   } as any)
+const ProtectedSalesPeopleShopkeepersCustomerIdLedgerRoute =
+  ProtectedSalesPeopleShopkeepersCustomerIdLedgerRouteImport.update({
+    id: '/sales/people/shopkeepers/$customerId/ledger',
+    path: '/sales/people/shopkeepers/$customerId/ledger',
+    getParentRoute: () => ProtectedRouteRoute,
+  } as any)
 const ProtectedSalesPeopleSalesmenSalesmanIdLedgerRoute =
   ProtectedSalesPeopleSalesmenSalesmanIdLedgerRouteImport.update({
     id: '/sales/people/salesmen/$salesmanId/ledger',
@@ -486,7 +494,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/reports': typeof ProtectedReportsRouteRouteWithChildren
   '/api/health': typeof ApiHealthRoute
-  '/investor/': typeof InvestorIndexRoute
   '/operator/$runId': typeof ProtectedOperatorRunIdRoute
   '/suppliers/$supplierId': typeof ProtectedSuppliersSupplierIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -545,17 +552,18 @@ export interface FileRoutesByFullPath {
   '/sales/customers/$customerId/': typeof ProtectedSalesCustomersCustomerIdIndexRoute
   '/sales/people/distributors/$customerId/ledger': typeof ProtectedSalesPeopleDistributorsCustomerIdLedgerRoute
   '/sales/people/salesmen/$salesmanId/ledger': typeof ProtectedSalesPeopleSalesmenSalesmanIdLedgerRoute
+  '/sales/people/shopkeepers/$customerId/ledger': typeof ProtectedSalesPeopleShopkeepersCustomerIdLedgerRoute
   '/inventory/item/$itemType/$itemId/': typeof ProtectedInventoryItemItemTypeItemIdIndexRoute
   '/manufacturing/productions/$runId/cartons/': typeof ProtectedManufacturingProductionsRunIdCartonsIndexRoute
   '/sales/people/distributors/$customerId/': typeof ProtectedSalesPeopleDistributorsCustomerIdIndexRoute
   '/sales/people/order-bookers/$orderBookerId/': typeof ProtectedSalesPeopleOrderBookersOrderBookerIdIndexRoute
   '/sales/people/salesmen/$salesmanId/': typeof ProtectedSalesPeopleSalesmenSalesmanIdIndexRoute
+  '/sales/people/shopkeepers/$customerId/': typeof ProtectedSalesPeopleShopkeepersCustomerIdIndexRoute
   '/sales/people/salesmen/$salesmanId/shops/$customerId': typeof ProtectedSalesPeopleSalesmenSalesmanIdShopsCustomerIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
-  '/investor': typeof InvestorIndexRoute
   '/operator/$runId': typeof ProtectedOperatorRunIdRoute
   '/suppliers/$supplierId': typeof ProtectedSuppliersSupplierIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -613,11 +621,13 @@ export interface FileRoutesByTo {
   '/sales/customers/$customerId': typeof ProtectedSalesCustomersCustomerIdIndexRoute
   '/sales/people/distributors/$customerId/ledger': typeof ProtectedSalesPeopleDistributorsCustomerIdLedgerRoute
   '/sales/people/salesmen/$salesmanId/ledger': typeof ProtectedSalesPeopleSalesmenSalesmanIdLedgerRoute
+  '/sales/people/shopkeepers/$customerId/ledger': typeof ProtectedSalesPeopleShopkeepersCustomerIdLedgerRoute
   '/inventory/item/$itemType/$itemId': typeof ProtectedInventoryItemItemTypeItemIdIndexRoute
   '/manufacturing/productions/$runId/cartons': typeof ProtectedManufacturingProductionsRunIdCartonsIndexRoute
   '/sales/people/distributors/$customerId': typeof ProtectedSalesPeopleDistributorsCustomerIdIndexRoute
   '/sales/people/order-bookers/$orderBookerId': typeof ProtectedSalesPeopleOrderBookersOrderBookerIdIndexRoute
   '/sales/people/salesmen/$salesmanId': typeof ProtectedSalesPeopleSalesmenSalesmanIdIndexRoute
+  '/sales/people/shopkeepers/$customerId': typeof ProtectedSalesPeopleShopkeepersCustomerIdIndexRoute
   '/sales/people/salesmen/$salesmanId/shops/$customerId': typeof ProtectedSalesPeopleSalesmenSalesmanIdShopsCustomerIdRoute
 }
 export interface FileRoutesById {
@@ -627,7 +637,6 @@ export interface FileRoutesById {
   '/_protected': typeof ProtectedRouteRouteWithChildren
   '/_protected/reports': typeof ProtectedReportsRouteRouteWithChildren
   '/api/health': typeof ApiHealthRoute
-  '/investor/': typeof InvestorIndexRoute
   '/_protected/operator/$runId': typeof ProtectedOperatorRunIdRoute
   '/_protected/suppliers/$supplierId': typeof ProtectedSuppliersSupplierIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -686,11 +695,13 @@ export interface FileRoutesById {
   '/_protected/sales/customers/$customerId/': typeof ProtectedSalesCustomersCustomerIdIndexRoute
   '/_protected/sales/people/distributors/$customerId/ledger': typeof ProtectedSalesPeopleDistributorsCustomerIdLedgerRoute
   '/_protected/sales/people/salesmen/$salesmanId/ledger': typeof ProtectedSalesPeopleSalesmenSalesmanIdLedgerRoute
+  '/_protected/sales/people/shopkeepers/$customerId/ledger': typeof ProtectedSalesPeopleShopkeepersCustomerIdLedgerRoute
   '/_protected/inventory/item/$itemType/$itemId/': typeof ProtectedInventoryItemItemTypeItemIdIndexRoute
   '/_protected/manufacturing/productions/$runId/cartons/': typeof ProtectedManufacturingProductionsRunIdCartonsIndexRoute
   '/_protected/sales/people/distributors/$customerId/': typeof ProtectedSalesPeopleDistributorsCustomerIdIndexRoute
   '/_protected/sales/people/order-bookers/$orderBookerId/': typeof ProtectedSalesPeopleOrderBookersOrderBookerIdIndexRoute
   '/_protected/sales/people/salesmen/$salesmanId/': typeof ProtectedSalesPeopleSalesmenSalesmanIdIndexRoute
+  '/_protected/sales/people/shopkeepers/$customerId/': typeof ProtectedSalesPeopleShopkeepersCustomerIdIndexRoute
   '/_protected/sales/people/salesmen/$salesmanId/shops/$customerId': typeof ProtectedSalesPeopleSalesmenSalesmanIdShopsCustomerIdRoute
 }
 export interface FileRouteTypes {
@@ -699,7 +710,6 @@ export interface FileRouteTypes {
     | '/'
     | '/reports'
     | '/api/health'
-    | '/investor/'
     | '/operator/$runId'
     | '/suppliers/$supplierId'
     | '/api/auth/$'
@@ -758,17 +768,18 @@ export interface FileRouteTypes {
     | '/sales/customers/$customerId/'
     | '/sales/people/distributors/$customerId/ledger'
     | '/sales/people/salesmen/$salesmanId/ledger'
+    | '/sales/people/shopkeepers/$customerId/ledger'
     | '/inventory/item/$itemType/$itemId/'
     | '/manufacturing/productions/$runId/cartons/'
     | '/sales/people/distributors/$customerId/'
     | '/sales/people/order-bookers/$orderBookerId/'
     | '/sales/people/salesmen/$salesmanId/'
+    | '/sales/people/shopkeepers/$customerId/'
     | '/sales/people/salesmen/$salesmanId/shops/$customerId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/api/health'
-    | '/investor'
     | '/operator/$runId'
     | '/suppliers/$supplierId'
     | '/api/auth/$'
@@ -826,11 +837,13 @@ export interface FileRouteTypes {
     | '/sales/customers/$customerId'
     | '/sales/people/distributors/$customerId/ledger'
     | '/sales/people/salesmen/$salesmanId/ledger'
+    | '/sales/people/shopkeepers/$customerId/ledger'
     | '/inventory/item/$itemType/$itemId'
     | '/manufacturing/productions/$runId/cartons'
     | '/sales/people/distributors/$customerId'
     | '/sales/people/order-bookers/$orderBookerId'
     | '/sales/people/salesmen/$salesmanId'
+    | '/sales/people/shopkeepers/$customerId'
     | '/sales/people/salesmen/$salesmanId/shops/$customerId'
   id:
     | '__root__'
@@ -839,7 +852,6 @@ export interface FileRouteTypes {
     | '/_protected'
     | '/_protected/reports'
     | '/api/health'
-    | '/investor/'
     | '/_protected/operator/$runId'
     | '/_protected/suppliers/$supplierId'
     | '/api/auth/$'
@@ -898,11 +910,13 @@ export interface FileRouteTypes {
     | '/_protected/sales/customers/$customerId/'
     | '/_protected/sales/people/distributors/$customerId/ledger'
     | '/_protected/sales/people/salesmen/$salesmanId/ledger'
+    | '/_protected/sales/people/shopkeepers/$customerId/ledger'
     | '/_protected/inventory/item/$itemType/$itemId/'
     | '/_protected/manufacturing/productions/$runId/cartons/'
     | '/_protected/sales/people/distributors/$customerId/'
     | '/_protected/sales/people/order-bookers/$orderBookerId/'
     | '/_protected/sales/people/salesmen/$salesmanId/'
+    | '/_protected/sales/people/shopkeepers/$customerId/'
     | '/_protected/sales/people/salesmen/$salesmanId/shops/$customerId'
   fileRoutesById: FileRoutesById
 }
@@ -911,7 +925,6 @@ export interface RootRouteChildren {
   AuthLayoutRouteRoute: typeof AuthLayoutRouteRouteWithChildren
   ProtectedRouteRoute: typeof ProtectedRouteRouteWithChildren
   ApiHealthRoute: typeof ApiHealthRoute
-  InvestorIndexRoute: typeof InvestorIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiInternalBootstrapAdminRoute: typeof ApiInternalBootstrapAdminRoute
 }
@@ -937,13 +950,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/investor/': {
-      id: '/investor/'
-      path: '/investor'
-      fullPath: '/investor/'
-      preLoaderRoute: typeof InvestorIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/health': {
@@ -1352,6 +1358,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedHrPayrollEmployeeEmployeeIdRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
+    '/_protected/sales/people/shopkeepers/$customerId/': {
+      id: '/_protected/sales/people/shopkeepers/$customerId/'
+      path: '/sales/people/shopkeepers/$customerId'
+      fullPath: '/sales/people/shopkeepers/$customerId/'
+      preLoaderRoute: typeof ProtectedSalesPeopleShopkeepersCustomerIdIndexRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
     '/_protected/sales/people/salesmen/$salesmanId/': {
       id: '/_protected/sales/people/salesmen/$salesmanId/'
       path: '/sales/people/salesmen/$salesmanId'
@@ -1385,6 +1398,13 @@ declare module '@tanstack/react-router' {
       path: '/inventory/item/$itemType/$itemId'
       fullPath: '/inventory/item/$itemType/$itemId/'
       preLoaderRoute: typeof ProtectedInventoryItemItemTypeItemIdIndexRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
+    '/_protected/sales/people/shopkeepers/$customerId/ledger': {
+      id: '/_protected/sales/people/shopkeepers/$customerId/ledger'
+      path: '/sales/people/shopkeepers/$customerId/ledger'
+      fullPath: '/sales/people/shopkeepers/$customerId/ledger'
+      preLoaderRoute: typeof ProtectedSalesPeopleShopkeepersCustomerIdLedgerRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
     '/_protected/sales/people/salesmen/$salesmanId/ledger': {
@@ -1518,10 +1538,12 @@ interface ProtectedRouteRouteChildren {
   ProtectedSalesCustomersCustomerIdIndexRoute: typeof ProtectedSalesCustomersCustomerIdIndexRoute
   ProtectedSalesPeopleDistributorsCustomerIdLedgerRoute: typeof ProtectedSalesPeopleDistributorsCustomerIdLedgerRoute
   ProtectedSalesPeopleSalesmenSalesmanIdLedgerRoute: typeof ProtectedSalesPeopleSalesmenSalesmanIdLedgerRoute
+  ProtectedSalesPeopleShopkeepersCustomerIdLedgerRoute: typeof ProtectedSalesPeopleShopkeepersCustomerIdLedgerRoute
   ProtectedInventoryItemItemTypeItemIdIndexRoute: typeof ProtectedInventoryItemItemTypeItemIdIndexRoute
   ProtectedSalesPeopleDistributorsCustomerIdIndexRoute: typeof ProtectedSalesPeopleDistributorsCustomerIdIndexRoute
   ProtectedSalesPeopleOrderBookersOrderBookerIdIndexRoute: typeof ProtectedSalesPeopleOrderBookersOrderBookerIdIndexRoute
   ProtectedSalesPeopleSalesmenSalesmanIdIndexRoute: typeof ProtectedSalesPeopleSalesmenSalesmanIdIndexRoute
+  ProtectedSalesPeopleShopkeepersCustomerIdIndexRoute: typeof ProtectedSalesPeopleShopkeepersCustomerIdIndexRoute
   ProtectedSalesPeopleSalesmenSalesmanIdShopsCustomerIdRoute: typeof ProtectedSalesPeopleSalesmenSalesmanIdShopsCustomerIdRoute
 }
 
@@ -1589,6 +1611,8 @@ const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
     ProtectedSalesPeopleDistributorsCustomerIdLedgerRoute,
   ProtectedSalesPeopleSalesmenSalesmanIdLedgerRoute:
     ProtectedSalesPeopleSalesmenSalesmanIdLedgerRoute,
+  ProtectedSalesPeopleShopkeepersCustomerIdLedgerRoute:
+    ProtectedSalesPeopleShopkeepersCustomerIdLedgerRoute,
   ProtectedInventoryItemItemTypeItemIdIndexRoute:
     ProtectedInventoryItemItemTypeItemIdIndexRoute,
   ProtectedSalesPeopleDistributorsCustomerIdIndexRoute:
@@ -1597,6 +1621,8 @@ const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
     ProtectedSalesPeopleOrderBookersOrderBookerIdIndexRoute,
   ProtectedSalesPeopleSalesmenSalesmanIdIndexRoute:
     ProtectedSalesPeopleSalesmenSalesmanIdIndexRoute,
+  ProtectedSalesPeopleShopkeepersCustomerIdIndexRoute:
+    ProtectedSalesPeopleShopkeepersCustomerIdIndexRoute,
   ProtectedSalesPeopleSalesmenSalesmanIdShopsCustomerIdRoute:
     ProtectedSalesPeopleSalesmenSalesmanIdShopsCustomerIdRoute,
 }
@@ -1610,7 +1636,6 @@ const rootRouteChildren: RootRouteChildren = {
   AuthLayoutRouteRoute: AuthLayoutRouteRouteWithChildren,
   ProtectedRouteRoute: ProtectedRouteRouteWithChildren,
   ApiHealthRoute: ApiHealthRoute,
-  InvestorIndexRoute: InvestorIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiInternalBootstrapAdminRoute: ApiInternalBootstrapAdminRoute,
 }

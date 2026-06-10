@@ -1,11 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Suspense, useState, useCallback } from "react";
 import { z } from "zod";
-import { ArrowLeft, Boxes } from "lucide-react";
+import { ArrowLeft, Boxes, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GenericLoader } from "@/components/custom/generic-loader";
-import { CartonGrid } from "@/features/manufacturing/cartons/components";
-import { useRecipeCartons } from "@/features/manufacturing/cartons/hooks/use-carton-mutations";
+import { CartonGrid, BatchKpiCards } from "@/features/manufacturing/cartons/components";
+import { useRecipeCartons, useRecipeKpis } from "@/features/manufacturing/cartons/hooks/use-carton-mutations";
 import {
   TopUpSheet,
   RemovePacksSheet,
@@ -15,6 +15,7 @@ import {
   QcHoldSheet,
   TransferSheet,
   AuditLogSheet,
+  AddCartonsToRecipeSheet,
 } from "@/features/manufacturing/cartons/sheets";
 import type { CartonStatus } from "@/lib/cartons/carton.types";
 import { type CartonRow } from "@/features/manufacturing/cartons/components/carton-grid";
@@ -40,6 +41,7 @@ type SheetName =
   | "release-hold"
   | "transfer"
   | "audit-log"
+  | "add-cartons"
   | null;
 
 function RecipeCartonRoute() {
@@ -47,13 +49,21 @@ function RecipeCartonRoute() {
   const { page } = Route.useSearch();
   const navigate = Route.useNavigate();
 
-  const { data: response, isLoading, error, refetch } = useRecipeCartons(recipeId, page);
+  const [selectedStatus, setSelectedStatus] = useState<CartonStatus | "ALL">("ALL");
+
+  const handleSelectStatus = useCallback((status: CartonStatus | "ALL") => {
+    setSelectedStatus(status);
+    navigate({ search: (prev) => ({ ...prev, page: 1 }) });
+  }, [navigate]);
+
+  const { data: response, isLoading, error, refetch } = useRecipeCartons(recipeId, page, 100, undefined, selectedStatus);
+  const { data: kpis } = useRecipeKpis(recipeId);
   const cartons = (response?.data || []).map(c => ({
     ...c,
     status: c.status as CartonStatus
   })) as CartonRow[];
   const meta = response?.meta;
-  
+
   const [activeSheet, setActiveSheet] = useState<SheetName>(null);
   const [selectedCarton, setSelectedCarton] = useState<CartonRow | null>(null);
 
@@ -89,17 +99,37 @@ function RecipeCartonRoute() {
               </span>
             </div>
           </div>
-          <h1 className="font-bold text-3xl uppercase tracking-tighter">
-            Carton Management
-          </h1>
-          <p className="mt-2 text-muted-foreground">
-            Manage individual cartons for this recipe across all production batches.
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="font-bold text-3xl uppercase tracking-tighter">
+                Carton Management
+              </h1>
+              <p className="mt-2 text-muted-foreground">
+                Manage individual cartons for this recipe across all production batches.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="h-9 text-xs font-bold uppercase tracking-wide"
+              onClick={() => openSheet("add-cartons")}
+            >
+              <Plus className="size-3.5 mr-1.5" />
+              Add Cartons
+            </Button>
+          </div>
         </header>
 
+        {kpis && (
+          <BatchKpiCards
+            kpis={kpis}
+            selectedStatus={selectedStatus}
+            onSelectStatus={handleSelectStatus}
+          />
+        )}
+
         <Suspense fallback={<GenericLoader title="Loading cartons..." />}>
-          <CartonGrid 
-            data={cartons} 
+          <CartonGrid
+            data={cartons}
             isLoading={isLoading}
             page={page}
             totalPages={meta?.totalPages}
@@ -118,6 +148,13 @@ function RecipeCartonRoute() {
             onViewAuditLog={(c) => openSheet("audit-log", c as any)}
           />
         </Suspense>
+
+        {/* Add Cartons Sheet */}
+        <AddCartonsToRecipeSheet
+          open={activeSheet === "add-cartons"}
+          onOpenChange={(v) => v || closeSheet()}
+          recipeId={recipeId}
+        />
 
         {/* Sheets */}
         {c && (

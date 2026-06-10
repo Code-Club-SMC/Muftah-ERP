@@ -48,19 +48,11 @@ export const createEmployeeSchema = z.object({
     .min(1, "Must be at least 1 hour")
     .max(24, "Cannot exceed 24 hours"),
 
-  standardSalary: z
+  basicSalary: z
     .string()
     .refine((val) => !isNaN(Number(val)) && Number(val) >= 0, {
       message: "Must be a valid positive number",
     }),
-
-  commissionRate: z
-    .string()
-    .refine(
-      (val) =>
-        !isNaN(Number(val)) && Number(val) >= 0 && Number(val) <= 100,
-      { message: "Must be a valid percentage between 0 and 100" },
-    ),
 
   isOrderBooker: z.boolean(),
   isSalesman: z.boolean(),

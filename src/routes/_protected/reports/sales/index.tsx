@@ -40,33 +40,30 @@ function SalesReportPage() {
   return (
     <ReportPageShell
       title="Sales Report"
-      subtitle="All finalized sales invoices and line items for the selected period. Includes cash, credit, and revenue breakdowns."
+      subtitle="Finalized sales invoices and line items for the selected period."
       onGenerate={handleGenerate}
       isLoading={isLoading}
       isEmpty={isEmpty}
       accentColor={ACCENT}
     >
       {data && (
-        <div className="space-y-10">
-          {/* Summary */}
+        <div className="space-y-8">
           <section>
             <SectionTitle accentColor={ACCENT}>Period Summary</SectionTitle>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:grid-cols-4">
-              <SummaryCard label="Invoices" value={formatNumber(data.summary.count)} accentColor={ACCENT} delay={0} />
-              <SummaryCard label="Total Cash" value={formatPKR(data.summary.totalCash, false)} accentColor={ACCENT} delay={80} />
-              <SummaryCard label="Total Credit" value={formatPKR(data.summary.totalCredit, false)} accentColor={ACCENT} delay={160} />
-              <SummaryCard label="Total Revenue" value={formatPKR(data.summary.totalRevenue, false)} accentColor={ACCENT} delay={240} />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:grid-cols-4">
+              <SummaryCard label="Invoices" value={formatNumber(data.summary.count)} accentColor={ACCENT} />
+              <SummaryCard label="Total Cash" value={formatPKR(data.summary.totalCash, false)} accentColor={ACCENT} />
+              <SummaryCard label="Total Credit" value={formatPKR(data.summary.totalCredit, false)} accentColor={ACCENT} />
+              <SummaryCard label="Total Revenue" value={formatPKR(data.summary.totalRevenue, false)} accentColor={ACCENT} />
             </div>
           </section>
 
-          {/* Invoice Table */}
           <section>
             <SectionTitle accentColor={ACCENT}>Invoice Summary</SectionTitle>
             <ReportTable
-              accentColor={ACCENT}
               headers={["Date", "Invoice #", "Customer", "Type", "Items", "Cash", "Credit", "Total"]}
             >
-              {data.invoices.map((inv: any, idx: number) => (
+              {data.invoices.map((inv) => (
                 <ReportTableRow key={inv.invoiceId} accentColor={ACCENT}>
                   <ReportCell muted>
                     {inv.date ? new Date(inv.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
@@ -83,15 +80,13 @@ function SalesReportPage() {
             </ReportTable>
           </section>
 
-          {/* Line Item Detail */}
           <section>
             <SectionTitle accentColor={ACCENT}>Line Item Detail</SectionTitle>
             <ReportTable
-              accentColor={ACCENT}
               headers={["Invoice #", "Product", "HSN Code", "Cartons", "Units", "Price/Carton", "Amount"]}
             >
-              {data.invoices.flatMap((inv: any) =>
-                inv.items.map((item: any, idx: number) => (
+              {data.invoices.flatMap((inv) =>
+                inv.items.map((item, idx) => (
                   <ReportTableRow key={`${inv.invoiceId}-${idx}`} accentColor={ACCENT}>
                     <ReportCell mono muted>{inv.sNo}</ReportCell>
                     <ReportCell>{item.pack}</ReportCell>

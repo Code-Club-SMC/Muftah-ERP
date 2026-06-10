@@ -120,6 +120,7 @@ export const createProductionRunFn = createServerFn()
           cartonsProduced: totalCartons,
           containersProduced: totalContainers,
           looseUnitsProduced: looseContainers,
+          plannedCartonsProduced: totalCartons,
           status: "scheduled",
           scheduledStartDate: data.scheduledStartDate || new Date(),
           notes: data.notes,

@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import { employees, payslips, payrolls, attendance, bradfordAuditLog } from "@/db/schemas/hr-schema";
+import { commissionRecords, orderBookers } from "@/db/schemas/sales-erp-schema";
 import {
   requireHrManageMiddleware,
   requireHrViewMiddleware,
@@ -190,7 +191,7 @@ export const getMonthlyPayrollTableFn = createServerFn()
 
     // ── KPI stats (whole dataset, not just page) ───────────────────────
     const totalStats = await db
-      .select({ totalBasic: sql<string>`sum(${employees.standardSalary})` })
+      .select({ totalBasic: sql<string>`sum(${employees.basicSalary})` })
       .from(employees)
       .where(eq(employees.status, "active"));
 
@@ -204,7 +205,7 @@ export const getMonthlyPayrollTableFn = createServerFn()
 
     const pendingGrossStats = await db
       .select({
-        totalPending: sql<string>`sum(CAST(${employees.standardSalary} AS numeric))`,
+        totalPending: sql<string>`sum(CAST(${employees.basicSalary} AS numeric))`,
       })
       .from(employees)
       .leftJoin(
@@ -240,7 +241,7 @@ export const getMonthlyPayrollTableFn = createServerFn()
         designation: emp.designation,
         department: emp.department,
         joiningDate: emp.joiningDate,
-        standardSalary: emp.standardSalary,
+        basicSalary: emp.basicSalary,
 
         // Payroll status
         hasPayslip: !!payslip,
@@ -288,6 +289,7 @@ export const previewEmployeePayslipFn = createServerFn()
           overtimeAmount: z.number().optional(),
           nightShiftAllowance: z.number().optional(),
           incentiveAmount: z.number().optional(),
+          commissionAmount: z.number().optional(),
           bonusAmount: z.number().optional(),
           advanceDeduction: z.number().optional(),
           taxDeduction: z.number().optional(),
@@ -349,6 +351,23 @@ export const previewEmployeePayslipFn = createServerFn()
       advanceProcessRecords = processedRecords;
     }
 
+    // Auto-pull commission for preview (same as actual payroll)
+    let autoCommission = 0;
+    const linkedOB = await db.query.orderBookers.findFirst({
+      where: eq(orderBookers.employeeId, employeeId),
+    });
+    if (linkedOB) {
+      const comms = await db.query.commissionRecords.findMany({
+        where: and(
+          eq(commissionRecords.orderBookerId, linkedOB.id),
+          eq(commissionRecords.status, "accrued"),
+          gte(commissionRecords.calculatedAt, new Date(startDate)),
+          lte(commissionRecords.calculatedAt, new Date(endDate)),
+        ),
+      });
+      autoCommission += comms.reduce((s, r) => s + parseFloat(r.commissionAmount || "0"), 0);
+    }
+
     const calculation = calculatePayslip(
       employeeData as any,
       formattedAttendance,
@@ -357,7 +376,11 @@ export const previewEmployeePayslipFn = createServerFn()
         manualDeductions: data.manualDeductions || [],
         deductConveyanceOnLeave: true,
       },
-      { ...(data.additionalAmounts || {}), advanceDeduction },
+      {
+        ...(data.additionalAmounts || {}),
+        advanceDeduction,
+        commissionAmount: (data.additionalAmounts?.commissionAmount || 0) + autoCommission,
+      },
       data.earlyCutoffDate
     );
 
@@ -408,7 +431,7 @@ export const previewEmployeePayslipFn = createServerFn()
         missedCycles.push({
           monthKey: key,
           label: cycle.slipLabel,
-          amount: parseFloat(employeeData.standardSalary || "0"),
+          amount: parseFloat(employeeData.basicSalary || "0"),
         });
       }
     }

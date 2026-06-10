@@ -22,10 +22,18 @@ import { type Warehouse } from "@/lib/types";
 import { Badge } from "../ui/badge";
 import { transferStockSchema } from "@/lib/validators/validators";
 
+type CartonStats = {
+  total: number;
+  complete: number;
+  partial: number;
+  totalPacks: number;
+};
+
 interface TransferStockDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   warehouses: Warehouse[];
+  cartonStats?: CartonStats;
   defaultValues?: {
     fromWarehouseId?: string;
     toWarehouseId?: string;
@@ -39,6 +47,7 @@ export const TransferStockDialog = ({
   open,
   onOpenChange,
   warehouses,
+  cartonStats,
   defaultValues,
 }: TransferStockDialogProps) => {
   const [materialType, setMaterialType] = useState<
@@ -233,6 +242,29 @@ export const TransferStockDialog = ({
               </Field>
             )}
           </form.Field>
+
+          {/* Carton Stats for Finished Goods */}
+          {materialType === "finished" && cartonStats && (
+            <div className="rounded border bg-muted/30 p-3 space-y-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                Available Inventory
+              </p>
+              <div className="flex gap-3">
+                <div className="flex-1 text-center">
+                  <p className="text-lg font-black text-emerald-600">{cartonStats.complete}</p>
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Full</p>
+                </div>
+                <div className="flex-1 text-center">
+                  <p className="text-lg font-black text-amber-600">{cartonStats.partial}</p>
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Partial</p>
+                </div>
+                <div className="flex-1 text-center">
+                  <p className="text-lg font-black text-primary">{cartonStats.total}</p>
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Total</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Quantity Section */}
           <div className="flex gap-4">

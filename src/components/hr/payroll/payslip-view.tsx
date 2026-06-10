@@ -1,8 +1,7 @@
 import { useState, useRef } from "react";
 import { format, parseISO } from "date-fns";
 import { Button } from "@/components/ui/button";
-import { Printer, Mail, Loader2, Edit2 } from "lucide-react";
-import { useSendPayslipEmail } from "@/hooks/hr/use-send-payslip-email";
+import { Printer, Loader2, Edit2 } from "lucide-react";
 import { OverrideBradfordDialog } from "./override-bradford-dialog";
 
 export type PayslipData = {
@@ -36,6 +35,7 @@ export type PayslipData = {
     overtimeAmount: string | null;
     nightShiftAllowanceAmount: string | null;
     incentiveAmount: string | null;
+    commissionAmount: string | null;
     bonusAmount: string | null;
     absentDeduction: string | null;
     leaveDeduction: string | null;
@@ -45,6 +45,15 @@ export type PayslipData = {
     grossSalary: string;
     totalDeductions: string;
     netSalary: string;
+    carriedForwardDeficit?: string | null;
+    commissionBreakdown?: Array<{
+      orderId: string;
+      orderRef: string;
+      orderDate: string;
+      orderValue: number;
+      rate: number;
+      amount: number;
+    }> | null;
     remarks: string | null;
     paymentSource?: string | null;
     createdAt: Date;
@@ -128,8 +137,8 @@ export const PayslipView = ({
     showActions = true,
 }: PayslipViewProps) => {
     const { employee, payroll } = payslip;
-    const sendEmailMutation = useSendPayslipEmail();
     const [overrideOpen, setOverrideOpen] = useState(false);
+    const [commissionExpanded, setCommissionExpanded] = useState(false);
     const printRef = useRef<HTMLDivElement>(null);
 
     // ── Bradford Factor ──────────────────────────────────────────────────────
@@ -174,6 +183,9 @@ export const PayslipView = ({
         ...(toN(payslip.incentiveAmount) > 0
             ? [{ label: "Incentive", value: toN(payslip.incentiveAmount) }]
             : []),
+        ...(toN(payslip.commissionAmount) > 0
+            ? [{ label: "Commission", value: toN(payslip.commissionAmount) }]
+            : []),
         ...(toN(payslip.bonusAmount) > 0
             ? [{ label: "Eid Allowance", value: toN(payslip.bonusAmount) }]
             : []),
@@ -186,11 +198,14 @@ export const PayslipView = ({
         { label: "Unapproved Leave", value: toN(payslip.leaveDeduction) },
         { label: "Loan Recovery", value: toN(payslip.advanceDeduction) },   // official label
         { label: "Other Deductions", value: toN(payslip.otherDeduction) },
+        ...(toN(payslip.carriedForwardDeficit) > 0
+            ? [{ label: "Carried Forward Deficit", value: toN(payslip.carriedForwardDeficit) }]
+            : []),
     ].filter((d) => d.value > 0);
 
     const totalEarnings = earnings.reduce((s, e) => s + e.value, 0);
     const totalDedns = deductions.reduce((s, d) => s + d.value, 0);
-    const netPay = Math.max(0, totalEarnings - totalDedns);
+    const netPay = totalEarnings - totalDedns; // Allow negative for deficit display
 
     const rowCount = Math.max(earnings.length, deductions.length, 7);
     const ep = [...earnings, ...Array(rowCount - earnings.length).fill(null)];
@@ -391,6 +406,37 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
 
   </div><!-- /main-box -->
 
+  ${payslip.commissionBreakdown && payslip.commissionBreakdown.length > 0 ? `
+  <!-- Commission Breakdown -->
+  <div style="border:${OUTER_BORDER};border-top:none;font-size:11px;">
+    <div style="padding:6px 10px;background:#f8f9fa;font-weight:600;">
+      Commission Breakdown (${payslip.commissionBreakdown.length} orders)
+    </div>
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="background:#e9ecef;">
+          <th style="${base};text-align:left;font-weight:600;border-bottom:${CELL_BORDER}">Order Ref</th>
+          <th style="${base};text-align:left;font-weight:600;border-bottom:${CELL_BORDER}">Date</th>
+          <th style="${base};text-align:right;font-weight:600;border-bottom:${CELL_BORDER}">Order Value</th>
+          <th style="${base};text-align:right;font-weight:600;border-bottom:${CELL_BORDER}">Rate %</th>
+          <th style="${base};text-align:right;font-weight:600;border-bottom:${CELL_BORDER};border-right:${CELL_BORDER}">Commission</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${payslip.commissionBreakdown.map((item) => `
+        <tr>
+          <td style="${base};border-bottom:${ROW_BORDER}">${item.orderRef}</td>
+          <td style="${base};border-bottom:${ROW_BORDER}">${item.orderDate}</td>
+          <td style="${base};text-align:right;border-bottom:${ROW_BORDER};font-variant-numeric:tabular-nums">${fmt(item.orderValue)}</td>
+          <td style="${base};text-align:right;border-bottom:${ROW_BORDER};font-variant-numeric:tabular-nums">${item.rate.toFixed(2)}%</td>
+          <td style="${base};text-align:right;border-bottom:${ROW_BORDER};border-right:${CELL_BORDER};font-variant-numeric:tabular-nums;font-weight:600">${fmt(item.amount)}</td>
+        </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  </div>
+  ` : ""}
+
   <!-- Remarks -->
   <div class="remarks">
     ${payslip.remarks || "Salaries are paid as per company policy."}
@@ -420,19 +466,6 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                 <div className="flex justify-end gap-3 print:hidden py-3 px-4 border-b border-gray-200 mb-4 bg-gray-50">
                     <Button variant="outline" size="sm" onClick={handlePrint} className="h-8 text-xs font-semibold">
                         <Printer className="size-3.5 mr-2" /> Print / Save PDF
-                    </Button>
-                    <Button
-                        variant="default"
-                        size="sm"
-                        onClick={() => sendEmailMutation.mutate(payslip.id)}
-                        disabled={sendEmailMutation.isPending}
-                        className="h-8 text-xs font-semibold"
-                    >
-                        {sendEmailMutation.isPending
-                            ? <Loader2 className="size-3.5 mr-2 animate-spin" />
-                            : <Mail className="size-3.5 mr-2" />
-                        }
-                        Email Payslip
                     </Button>
                 </div>
             )}
@@ -591,6 +624,55 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                     </table>
 
                 </div>{/* /main-box */}
+
+                {/* Commission Breakdown (Expandable) */}
+                {payslip.commissionBreakdown && payslip.commissionBreakdown.length > 0 && (
+                    <div style={{
+                        border: OUTER_BORDER,
+                        borderTop: "none",
+                        fontSize: 11,
+                    }}>
+                        <div
+                            style={{
+                                padding: "6px 10px",
+                                background: "#f8f9fa",
+                                cursor: "pointer",
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                fontWeight: 600,
+                            }}
+                            onClick={() => setCommissionExpanded(!commissionExpanded)}
+                        >
+                            <span>Commission Breakdown ({payslip.commissionBreakdown.length} orders)</span>
+                            <span style={{ fontSize: 9 }}>{commissionExpanded ? "▲ Collapse" : "▼ Expand"}</span>
+                        </div>
+                        {commissionExpanded && (
+                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                <thead>
+                                    <tr style={{ background: "#e9ecef" }}>
+                                        <th style={{ ...base, textAlign: "left", fontWeight: 600, borderBottom: CELL_BORDER }}>Order Ref</th>
+                                        <th style={{ ...base, textAlign: "left", fontWeight: 600, borderBottom: CELL_BORDER }}>Date</th>
+                                        <th style={{ ...base, textAlign: "right", fontWeight: 600, borderBottom: CELL_BORDER }}>Order Value</th>
+                                        <th style={{ ...base, textAlign: "right", fontWeight: 600, borderBottom: CELL_BORDER }}>Rate %</th>
+                                        <th style={{ ...base, textAlign: "right", fontWeight: 600, borderBottom: CELL_BORDER, borderRight: CELL_BORDER }}>Commission</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {payslip.commissionBreakdown.map((item) => (
+                                        <tr key={item.orderId}>
+                                            <td style={{ ...base, borderBottom: ROW_BORDER }}>{item.orderRef}</td>
+                                            <td style={{ ...base, borderBottom: ROW_BORDER }}>{item.orderDate}</td>
+                                            <td style={{ ...base, textAlign: "right", borderBottom: ROW_BORDER, fontVariantNumeric: "tabular-nums" }}>{fmt(item.orderValue)}</td>
+                                            <td style={{ ...base, textAlign: "right", borderBottom: ROW_BORDER, fontVariantNumeric: "tabular-nums" }}>{item.rate.toFixed(2)}%</td>
+                                            <td style={{ ...base, textAlign: "right", borderBottom: ROW_BORDER, borderRight: CELL_BORDER, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmt(item.amount)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                )}
 
                 {/* Remarks */}
                 <div style={{

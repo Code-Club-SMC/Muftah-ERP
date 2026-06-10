@@ -158,28 +158,12 @@ const InvoicePrintContent = ({
 
 const fmtCartonQty = (n: number): string => `${n} - 0`;
 
-const buildDistributorData = (inv: any): DistributorInvoiceData => ({
-  companyName: "IIPL",
-  docType: "Sales Estimate",
-  party: {
-    name: inv.customer?.name ?? "N/A",
-    address: inv.customer?.address ?? "N/A",
-    city: inv.customer?.city ?? "N/A",
-    tel: inv.customer?.mobileNumber ?? "N/A",
-    mob: "",
-  },
-  date: format(new Date(inv.date), "dd-MMM-yyyy"),
-  estNo: inv.slipNumber ?? inv.id.slice(-8).toUpperCase(),
-  docNo: inv.slipNumber ?? inv.id.slice(-8).toUpperCase(),
-  pvNo: "—",
-  mBillNo: inv.slipNumber ?? "—",
-  transporter: inv.warehouse?.name ?? "—",
-  biltyNo: "—",
-  dispDate: "—",
-  items: (inv.items ?? []).map((item: any, i: number) => {
+const buildDistributorData = (inv: any): DistributorInvoiceData => {
+  const items = (inv.items ?? []).map((item: any, i: number) => {
     const billedCartons = Number(item.numberOfCartons) || 0;
     const discCartons = Number(item.discountCartons) || 0;
     const packsPerCarton = Number(item.packsPerCarton) || 0;
+    const marginPerPack = Number(item.margin) || 0;
 
     // Carton qty label: "N Cartons (M Packs)" when packsPerCarton is known
     const totalPacks = packsPerCarton > 0 ? billedCartons * packsPerCarton : 0;
@@ -194,7 +178,7 @@ const buildDistributorData = (inv: any): DistributorInvoiceData => ({
 
     return {
       serialNo: i + 1,
-      itemCode: "", // removed per spec — leave blank
+      itemCode: "",
       itemDescription: item.pack,
       cartonQty: cartonQtyLabel,
       schemeCarton: schemeLabel,
@@ -202,13 +186,63 @@ const buildDistributorData = (inv: any): DistributorInvoiceData => ({
       grossAmount: Number(item.amount) || 0,
       discount: 0,
       netAmount: Number(item.amount) || 0,
+      // For profit calculation
+      _billedCartons: billedCartons,
+      _discCartons: discCartons,
+      _packsPerCarton: packsPerCarton,
+      _marginPerPack: marginPerPack,
     };
-  }),
-  freight: Number(inv.expenses) || 0,
-  // previousBalance is the customer's outstanding BEFORE this invoice — not this invoice's credit
-  previousBalance: 0,
-  invoiceAmount: Number(inv.totalPrice) || 0,
-});
+  });
+
+  // Calculate total profit using COGS from invoice items when available.
+  // If COGS is not available (legacy invoices), fall back to the selling-price derivation.
+  const totalProfit = items.reduce((sum: number, item: any) => {
+    const billedPacks = item._billedCartons * item._packsPerCarton;
+    const freePacks = item._discCartons * item._packsPerCarton;
+    const totalPacks = billedPacks + freePacks;
+
+    // Use actual COGS per unit if available
+    const cogsPerUnit = parseFloat(item.costOfGoodsSoldPerUnit || "0");
+    if (cogsPerUnit > 0) {
+      const lineSellingTotal = item._billedCartons * item.cartonRate;
+      const lineCOGS = totalPacks * cogsPerUnit;
+      return sum + (lineSellingTotal - lineCOGS);
+    }
+
+    // Fallback: circular derivation from selling prices
+    const costPerPack = item._packsPerCarton > 0
+      ? (item.cartonRate / item._packsPerCarton) - item._marginPerPack
+      : 0;
+    const revenue = billedPacks * item._marginPerPack;
+    const freeCost = freePacks * Math.max(0, costPerPack);
+    return sum + revenue - freeCost;
+  }, 0) - (Number(inv.expenses) || 0);
+
+  return {
+    companyName: "IIPL",
+    docType: "Sales Estimate",
+    party: {
+      name: inv.customer?.name ?? "N/A",
+      address: inv.customer?.address ?? "N/A",
+      city: inv.customer?.city ?? "N/A",
+      tel: inv.customer?.mobileNumber ?? "N/A",
+      mob: "",
+    },
+    date: format(new Date(inv.date), "dd-MMM-yyyy"),
+    estNo: inv.slipNumber ?? inv.id.slice(-8).toUpperCase(),
+    docNo: inv.slipNumber ?? inv.id.slice(-8).toUpperCase(),
+    pvNo: "—",
+    mBillNo: inv.slipNumber ?? "—",
+    transporter: inv.warehouse?.name ?? "—",
+    biltyNo: "—",
+    dispDate: "—",
+    items: items.map(({ _billedCartons, _discCartons, _packsPerCarton, _marginPerPack, ...rest }) => rest),
+    freight: Number(inv.expenses) || 0,
+    previousBalance: 0,
+    invoiceAmount: Number(inv.totalPrice) || 0,
+    totalProfit: Math.round(totalProfit * 100) / 100,
+  };
+};
 
 const buildRetailerData = (inv: any): RetailerInvoiceData => {
   const isDist = inv.customer?.customerType === "distributor";

@@ -56,9 +56,11 @@ export const SettlementSection = ({
                                         step="1"
                                         className="pl-7"
                                         onFocus={handleFocus}
-                                        value={field.state.value === 0 ? "" : field.state.value}
+                                        value={field.state.value}
                                         onChange={(e) => field.handleChange(e.target.value === "" ? 0 : Number(e.target.value))}
                                         placeholder="0"
+                                        aria-label="Expense amount"
+                                        autoComplete="off"
                                     />
                                     <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-semibold pointer-events-none">₨</span>
                                 </div>
@@ -80,6 +82,7 @@ export const SettlementSection = ({
                                     rows={2}
                                     placeholder="e.g. Loading charges, freight"
                                     className="resize-none"
+                                    aria-label="Expense details"
                                 />
                             </Field>
                         )}
@@ -96,8 +99,9 @@ export const SettlementSection = ({
                                     value={field.state.value}
                                     onChange={(e) => field.handleChange(e.target.value)}
                                     rows={2}
-                                    placeholder="Any special instructions or notes"
+                                    placeholder="Any special instructions or notes…"
                                     className="resize-none"
+                                    aria-label="Invoice remarks"
                                 />
                             </Field>
                         )}
@@ -157,12 +161,14 @@ export const SettlementSection = ({
                                         onFocus={handleFocus}
                                         value={field.state.value}
                                         onChange={(e) => field.handleChange(Number(e.target.value))}
+                                        aria-label="Cash received amount"
+                                        autoComplete="off"
                                     />
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-bold pointer-events-none">₨</span>
                                 </div>
                                 {cashExceedsTotal && (
                                     <p className="text-xs text-destructive flex items-center gap-1.5 bg-destructive/10 px-3 py-2 rounded-md">
-                                        <AlertCircle className="size-3.5 shrink-0" />
+                                        <AlertCircle className="size-3.5 shrink-0" aria-hidden="true" />
                                         Cash cannot exceed total payable of {PKR(totalPayable)}
                                     </p>
                                 )}
@@ -181,7 +187,7 @@ export const SettlementSection = ({
                                 className="h-8 text-xs gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-400"
                                 onClick={() => form.setFieldValue("cash", totalPayable)}
                             >
-                                <CheckCircle2 className="size-3.5" /> Paid in Full
+                                <CheckCircle2 className="size-3.5" aria-hidden="true" /> Paid in Full
                             </Button>
                             <Button
                                 type="button"
@@ -190,7 +196,7 @@ export const SettlementSection = ({
                                 className="h-8 text-xs gap-1.5 border-amber-200 text-amber-700 hover:bg-amber-50 hover:border-amber-400"
                                 onClick={() => form.setFieldValue("cash", 0)}
                             >
-                                <CreditCard className="size-3.5" /> Full Credit
+                                <CreditCard className="size-3.5" aria-hidden="true" /> Full Credit
                             </Button>
                         </div>
                     )}

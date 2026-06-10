@@ -5,6 +5,7 @@ import { requireSalesViewMiddleware, requireSalesManageMiddleware } from "@/lib/
 import { z } from "zod";
 import { count, like, or, SQL, eq, gt, lt, and, sum as drizzleSum, desc as drizzleDesc, asc as drizzleAsc, gte, lte, isNotNull } from "drizzle-orm";
 import { parseISO, isValid } from "date-fns";
+import { createId } from "@paralleldrive/cuid2";
 
 // ── Shared sort config ─────────────────────────────────────────────────────
 const customerSortFields = {
@@ -13,6 +14,44 @@ const customerSortFields = {
   credit: customers.credit,
   createdAt: customers.createdAt,
 } as const;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATE CUSTOMER
+// ═══════════════════════════════════════════════════════════════════════════
+export const createCustomerFn = createServerFn()
+  .middleware([requireSalesManageMiddleware])
+  .inputValidator((input: any) =>
+    z.object({
+      name: z.string().min(1, "Name is required"),
+      mobileNumber: z.string().optional(),
+      cnic: z.string().optional(),
+      address: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      bankAccount: z.string().optional(),
+      customerType: z.enum(["distributor", "retailer", "shopkeeper", "wholesaler"]).default("retailer"),
+      defaultMargin: z.string().optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const [inserted] = await db
+      .insert(customers)
+      .values({
+        id: createId(),
+        name: data.name,
+        mobileNumber: data.mobileNumber || null,
+        cnic: data.cnic || null,
+        address: data.address || null,
+        city: data.city || null,
+        state: data.state || null,
+        bankAccount: data.bankAccount || null,
+        customerType: data.customerType,
+        defaultMargin: data.defaultMargin || "0",
+      })
+      .returning();
+
+    return inserted;
+  });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GET CUSTOMERS (extended with advanced filters)

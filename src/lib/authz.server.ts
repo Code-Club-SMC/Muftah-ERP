@@ -10,6 +10,9 @@ import {
   userRoleAssignments,
 } from "@/db";
 import { auth } from "./auth";
+
+// Extract transaction type from db.transaction callback parameter
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 import {
   canAccessPath,
   getFirstAccessiblePath,
@@ -18,8 +21,10 @@ import {
   PERMISSION_DEFINITIONS,
   type PermissionKey,
   SYSTEM_ROLE_SEEDS,
+  SYSTEM_ROLE_SLUGS,
   type SystemRoleSlug,
 } from "./rbac";
+import { ForbiddenError } from "./errors";
 
 export type AuthSession = NonNullable<
   Awaited<ReturnType<typeof auth.api.getSession>>
@@ -49,7 +54,7 @@ const roleSeedMap = new Map(SYSTEM_ROLE_SEEDS.map((role) => [role.slug, role]));
 let seedPromise: Promise<void> | null = null;
 
 async function upsertRoleSeed(
-  tx: typeof db,
+  tx: Tx,
   roleSeed: (typeof SYSTEM_ROLE_SEEDS)[number],
 ) {
   const [roleRecord] = await tx
@@ -110,7 +115,7 @@ export async function ensureRbacSeeded() {
         );
 
         for (const roleSeed of SYSTEM_ROLE_SEEDS) {
-          const roleRecord = await upsertRoleSeed(tx as typeof db, roleSeed);
+          const roleRecord = await upsertRoleSeed(tx, roleSeed);
           const existingPermissionCount = await tx.query.appRolePermissions.findMany({
             where: eq(appRolePermissions.roleId, roleRecord.id),
             columns: {
@@ -151,6 +156,17 @@ export async function ensureRbacSeeded() {
 
 function getHeaders() {
   return getRequestHeaders();
+}
+
+function isActiveBan(authUser: {
+  banned: boolean | null;
+  banExpires: Date | null;
+}) {
+  if (!authUser.banned) {
+    return false;
+  }
+
+  return !authUser.banExpires || authUser.banExpires > new Date();
 }
 
 export async function getSessionFromRequest() {
@@ -225,6 +241,18 @@ export async function getAuthContext() {
     return null;
   }
 
+  const authUser = await db.query.user.findFirst({
+    where: eq(user.id, session.user.id),
+    columns: {
+      banned: true,
+      banExpires: true,
+    },
+  });
+
+  if (!authUser || isActiveBan(authUser)) {
+    return null;
+  }
+
   const role = await resolveUserRole(session.user.id, session.user.role);
   const permissions = await getRolePermissionKeys(role.id, role.slug);
   const permissionList = Array.from(permissions);
@@ -257,9 +285,7 @@ export async function requireSession(location?: { href?: string; pathname?: stri
 
 export function requirePermission(authContext: AuthContext, permission: PermissionKey) {
   if (!hasPermission(authContext.permissions, permission)) {
-    throw redirect({
-      to: authContext.defaultLandingPath,
-    });
+    throw new ForbiddenError(`Missing required permission: ${permission}`);
   }
 
   return authContext;

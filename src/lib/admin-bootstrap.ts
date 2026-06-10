@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 const BOOTSTRAP_SECRET_HEADER = "x-bootstrap-secret";
 const BOOTSTRAP_SECRET_ENV_KEY = "ADMIN_BOOTSTRAP_SECRET";
 const PUBLIC_SIGNUP_ENV_KEY = "ALLOW_PUBLIC_SIGNUP";
@@ -27,5 +29,12 @@ export function hasValidBootstrapSecret(request: Request) {
     return false;
   }
 
-  return providedSecret === configuredSecret;
+  const configuredBuffer = Buffer.from(configuredSecret, "utf8");
+  const providedBuffer = Buffer.from(providedSecret, "utf8");
+
+  if (configuredBuffer.length !== providedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(providedBuffer, configuredBuffer);
 }

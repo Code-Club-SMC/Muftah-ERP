@@ -13,57 +13,39 @@ const accentMap: Record<
   {
     text: string;
     bg: string;
-    bgHover: string;
     buttonBg: string;
     buttonBgHover: string;
-    buttonShadow: string;
-    ring: string;
   }
 > = {
   emerald: {
-    text: "text-emerald-400",
+    text: "text-emerald-500",
     bg: "bg-emerald-500/10",
-    bgHover: "hover:bg-emerald-500/20",
     buttonBg: "bg-emerald-600",
     buttonBgHover: "hover:bg-emerald-500",
-    buttonShadow: "shadow-emerald-500/20",
-    ring: "focus-visible:ring-emerald-500/30",
   },
   rose: {
-    text: "text-rose-400",
+    text: "text-rose-500",
     bg: "bg-rose-500/10",
-    bgHover: "hover:bg-rose-500/20",
     buttonBg: "bg-rose-600",
     buttonBgHover: "hover:bg-rose-500",
-    buttonShadow: "shadow-rose-500/20",
-    ring: "focus-visible:ring-rose-500/30",
   },
   blue: {
-    text: "text-blue-400",
+    text: "text-blue-500",
     bg: "bg-blue-500/10",
-    bgHover: "hover:bg-blue-500/20",
     buttonBg: "bg-blue-600",
     buttonBgHover: "hover:bg-blue-500",
-    buttonShadow: "shadow-blue-500/20",
-    ring: "focus-visible:ring-blue-500/30",
   },
   amber: {
-    text: "text-amber-400",
+    text: "text-amber-500",
     bg: "bg-amber-500/10",
-    bgHover: "hover:bg-amber-500/20",
     buttonBg: "bg-amber-600",
     buttonBgHover: "hover:bg-amber-500",
-    buttonShadow: "shadow-amber-500/20",
-    ring: "focus-visible:ring-amber-500/30",
   },
   violet: {
-    text: "text-violet-400",
+    text: "text-violet-500",
     bg: "bg-violet-500/10",
-    bgHover: "hover:bg-violet-500/20",
     buttonBg: "bg-violet-600",
     buttonBgHover: "hover:bg-violet-500",
-    buttonShadow: "shadow-violet-500/20",
-    ring: "focus-visible:ring-violet-500/30",
   },
 };
 
@@ -107,46 +89,36 @@ export function ReportPageShell({
   };
 
   return (
-    <main className="flex-1 overflow-y-auto relative">
-      {/* Subtle noise texture overlay */}
-      <div
-        className="absolute inset-0 pointer-events-none opacity-[0.015]"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
-          backgroundRepeat: "repeat",
-          backgroundSize: "128px 128px",
-        }}
-      />
-
-      <div className="flex flex-col min-h-full relative z-10">
+    <main className="flex-1 overflow-y-auto">
+      <div className="flex flex-col min-h-full">
         {/* Controls - hidden in print */}
         <div className="print:hidden">
           {/* Breadcrumb + Header */}
-          <div className="border-b border-border/40 pb-6">
+          <div className="border-b pb-6">
             <Link
               to="/reports"
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors mb-4 group"
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mb-4"
             >
-              <ArrowLeft className="size-3.5 group-hover:-translate-x-0.5 transition-transform" />
+              <ArrowLeft className="size-3.5" />
               Back to Reports
             </Link>
 
             <div className="flex items-end justify-between gap-6">
               <div className="flex-1 min-w-0">
-                <h1 className="text-3xl font-black tracking-tight font-[family-name:var(--font-dm-sans)]">
+                <h1 className="text-2xl font-semibold tracking-tight">
                   {title}
                 </h1>
-                <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed max-w-2xl">
+                <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
                   {subtitle}
                 </p>
               </div>
 
-              <div className="flex items-center gap-2.5 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
                 {hasGenerated && !isEmpty && (
                   <Button
                     variant="outline"
                     onClick={handlePrint}
-                    className={`gap-2 h-10 px-4 text-xs font-semibold border-border/60 ${a.bgHover} transition-all`}
+                    className="gap-2 h-9 px-3 text-xs"
                   >
                     <Printer className="size-3.5" />
                     Print
@@ -157,8 +129,8 @@ export function ReportPageShell({
           </div>
 
           {/* Toolbar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 py-6">
-            <div className="flex items-center gap-2 bg-muted/40 border border-border/50 rounded-xl px-3 py-2.5">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 py-4">
+            <div className="flex items-center gap-2 border rounded-md px-3 py-2">
               <CalendarRange className={`size-4 ${a.text}`} />
               <DatePickerWithRange
                 date={dateRange}
@@ -172,12 +144,12 @@ export function ReportPageShell({
             <Button
               onClick={handleGenerate}
               disabled={isLoading || !dateRange?.from}
-              className={`gap-2 h-11 px-5 text-xs font-bold uppercase tracking-wider ${a.buttonBg} ${a.buttonBgHover} text-white shadow-lg ${a.buttonShadow} transition-all ${a.ring}`}
+              className={`gap-2 h-9 px-4 text-xs font-medium ${a.buttonBg} ${a.buttonBgHover} text-white`}
             >
               {isLoading ? (
-                <Loader2 className="size-4 animate-spin" />
+                <Loader2 className="size-3.5 animate-spin" />
               ) : (
-                <FileText className="size-4" />
+                <FileText className="size-3.5" />
               )}
               Generate Report
             </Button>
@@ -185,16 +157,14 @@ export function ReportPageShell({
         </div>
 
         {/* Report Content */}
-        <div ref={reportRef} className="report-content pb-12">
+        <div ref={reportRef} className="report-content pb-8">
           {/* Print-only header */}
-          <div className="hidden print:block mb-8 pb-4 border-b-2 border-black">
-            <h1 className="text-2xl font-black uppercase tracking-tighter">
-              {title}
-            </h1>
+          <div className="hidden print:block mb-6 pb-3 border-b-2 border-black">
+            <h1 className="text-xl font-bold uppercase">{title}</h1>
             <p className="text-sm text-gray-600 mt-1">
               {subtitle}
               {dateRange?.from && dateRange?.to && (
-                <span className="ml-2 font-mono">
+                <span className="ml-2">
                   ({dateRange.from.toLocaleDateString()} —{" "}
                   {dateRange.to.toLocaleDateString()})
                 </span>
@@ -203,33 +173,26 @@ export function ReportPageShell({
           </div>
 
           {!hasGenerated ? (
-            <div className="flex flex-col items-center justify-center py-28 text-center bg-muted/[0.03] rounded-2xl border border-dashed border-border/30 print:hidden">
-              <div className={`w-16 h-16 rounded-2xl ${a.bg} flex items-center justify-center mb-5`}>
-                <FileText className={`size-7 ${a.text}`} />
-              </div>
-              <h3 className="font-semibold text-base">Ready to Generate</h3>
-              <p className="text-sm text-muted-foreground mt-2 max-w-sm leading-relaxed">
+            <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed rounded-lg print:hidden">
+              <FileText className={`size-8 ${a.text} mb-3 opacity-60`} />
+              <h3 className="font-medium text-sm">Ready to Generate</h3>
+              <p className="text-xs text-muted-foreground mt-1 max-w-sm">
                 {emptyMessage}
               </p>
             </div>
           ) : isLoading ? (
-            <div className="flex flex-col items-center justify-center py-28 print:hidden">
-              <div className={`w-12 h-12 rounded-xl ${a.bg} flex items-center justify-center mb-4`}>
-                <Loader2 className={`size-6 ${a.text} animate-spin`} />
-              </div>
-              <p className="text-sm text-muted-foreground font-medium">
+            <div className="flex flex-col items-center justify-center py-20 print:hidden">
+              <Loader2 className={`size-5 ${a.text} animate-spin mb-3`} />
+              <p className="text-sm text-muted-foreground">
                 Generating report…
               </p>
             </div>
           ) : isEmpty ? (
-            <div className="flex flex-col items-center justify-center py-28 text-center bg-muted/[0.03] rounded-2xl border border-dashed border-border/30 print:hidden">
-              <div className={`w-16 h-16 rounded-2xl ${a.bg} flex items-center justify-center mb-5`}>
-                <FileText className={`size-7 ${a.text} opacity-50`} />
-              </div>
-              <h3 className="font-semibold text-base">No Records Found</h3>
-              <p className="text-sm text-muted-foreground mt-2 max-w-sm leading-relaxed">
-                No data was found for the selected date range. Try expanding the
-                range or checking a different period.
+            <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed rounded-lg print:hidden">
+              <FileText className="size-8 text-muted-foreground mb-3 opacity-40" />
+              <h3 className="font-medium text-sm">No Records Found</h3>
+              <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+                No data was found for the selected date range.
               </p>
             </div>
           ) : (
@@ -255,7 +218,6 @@ export function ReportPageShell({
             width: 100%;
             border-collapse: collapse;
             font-size: 9.5pt;
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
           }
           th {
             background: #f0f0f0 !important;
@@ -264,9 +226,7 @@ export function ReportPageShell({
             padding: 7px 10px;
             text-align: left;
             font-weight: 700;
-            text-transform: uppercase;
             font-size: 8.5pt;
-            letter-spacing: 0.03em;
           }
           td {
             border: 1px solid #ddd;

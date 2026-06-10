@@ -11,7 +11,6 @@ import {
   useUpdateRecoveryStatus,
   useCreateRecoveryAttempt,
   useEscalateRecovery,
-  useAutoAssignOverdueSlips,
 } from "@/hooks/sales/use-credit-recovery";
 import { useGetSalesmen } from "@/hooks/sales/use-sales-people";
 import { Button } from "@/components/ui/button";
@@ -56,7 +55,6 @@ import {
   AlertCircle,
   CheckCircle2,
   ArrowRight,
-  RefreshCw,
   ShieldAlert,
   ChevronUp,
 } from "lucide-react";
@@ -96,7 +94,6 @@ export const Route = createFileRoute("/_protected/sales/recovery/")({
 function RecoveryPage() {
   const [activeTab, setActiveTab] = useState("due-today");
   const { data: summary, isLoading: summaryLoading } = useGetRecoverySummary();
-  const { mutate: autoAssign, isPending: autoAssigning } = useAutoAssignOverdueSlips();
 
   return (
     <div className="space-y-6">
@@ -108,19 +105,6 @@ function RecoveryPage() {
             Track overdue credit, assign recovery staff, and monitor follow-ups.
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={autoAssigning}
-          onClick={() => autoAssign()}
-        >
-          {autoAssigning ? (
-            <RefreshCw className="mr-2 size-4 animate-spin" />
-          ) : (
-            <UserCheck className="mr-2 size-4" />
-          )}
-          Auto-Assign Overdue
-        </Button>
       </div>
 
       {/* Summary Cards */}

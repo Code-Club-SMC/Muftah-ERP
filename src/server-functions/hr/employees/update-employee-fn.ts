@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
-import { employees } from "@/db/schemas/hr-schema";
+import { employees, salaryRevisions } from "@/db/schemas/hr-schema";
 import { salesmen, orderBookers } from "@/db/schemas/sales-erp-schema";
 import { eq } from "drizzle-orm";
 import { updateEmployeeSchema } from "@/lib/validators/hr-validators";
@@ -9,14 +9,20 @@ import { requireHrManageMiddleware } from "@/lib/middlewares";
 export const updateEmployeeFn = createServerFn()
   .middleware([requireHrManageMiddleware])
   .inputValidator(updateEmployeeSchema)
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { id, ...updateData } = data;
 
     return await db.transaction(async (tx) => {
-      // Fetch existing employee to check flag changes
+      // Fetch existing employee to check flag changes and salary changes
       const existing = await tx.query.employees.findFirst({
         where: eq(employees.id, id),
       });
+
+      const salaryChanged =
+        existing &&
+        (existing.basicSalary !== (updateData.basicSalary || "0") ||
+          JSON.stringify(existing.allowanceConfig) !==
+            JSON.stringify(updateData.allowanceConfig));
 
       const [updatedEmployee] = await tx
         .update(employees)
@@ -44,14 +50,29 @@ export const updateEmployeeFn = createServerFn()
           bankAccountNumber: updateData.bankAccountNumber,
           restDays: updateData.restDays ?? [0],
           standardDutyHours: updateData.standardDutyHours,
-          standardSalary: updateData.standardSalary || "0",
-          commissionRate: updateData.commissionRate || "0",
+          basicSalary: updateData.basicSalary || "0",
           isOrderBooker: updateData.isOrderBooker ?? false,
           isSalesman: updateData.isSalesman ?? false,
           allowanceConfig: updateData.allowanceConfig,
         })
         .where(eq(employees.id, id))
         .returning();
+
+      // Record salary revision if salary or allowances changed
+      if (salaryChanged) {
+        const oldSalary = parseFloat(existing!.basicSalary || "0");
+        const newSalary = parseFloat(updateData.basicSalary || "0");
+        const salaryDiff = newSalary - oldSalary;
+
+        await tx.insert(salaryRevisions).values({
+          employeeId: id,
+          revisionDate: new Date().toISOString().split("T")[0],
+          basicSalary: updateData.basicSalary || "0",
+          allowanceConfig: updateData.allowanceConfig || [],
+          reason: `Salary update: PKR ${oldSalary.toLocaleString()} → PKR ${newSalary.toLocaleString()} (${salaryDiff >= 0 ? "+" : ""}${salaryDiff.toLocaleString()})`,
+          changedById: context.session.user.id,
+        });
+      }
 
       const fullName = `${updateData.firstName} ${updateData.lastName}`.trim();
 
@@ -101,7 +122,6 @@ export const updateEmployeeFn = createServerFn()
               name: fullName,
               phone: updateData.phone || existingOB.phone,
               address: updateData.address || existingOB.address,
-              commissionRate: updateData.commissionRate || existingOB.commissionRate || "0",
               status: "active",
             })
             .where(eq(orderBookers.id, existingOB.id));
@@ -110,7 +130,6 @@ export const updateEmployeeFn = createServerFn()
             name: fullName,
             phone: updateData.phone || undefined,
             address: updateData.address || undefined,
-            commissionRate: updateData.commissionRate || "0",
             employeeId: id,
           });
         }

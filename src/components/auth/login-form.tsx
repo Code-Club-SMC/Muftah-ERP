@@ -1,7 +1,7 @@
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
 import { Loader2, Mail, LockKeyhole } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +18,6 @@ import { loginSchema } from "@/lib/validators";
 import { FormWrapper } from "../custom/form-wrapper";
 import { Field, FieldError, FieldGroup, FieldLabel } from "../ui/field";
 import { PasswordInput } from "../custom/password-input";
-import { EmailVerification } from "./email-verification";
 
 type LoginFormProps = {
   redirectTo?: string;
@@ -26,8 +25,6 @@ type LoginFormProps = {
 
 export const LoginForm = ({ redirectTo }: LoginFormProps) => {
   const [isPending, startTransition] = useTransition();
-  const [showVerificationComponent, setShowVerificationComponent] =
-    useState(false);
 
   const form = useForm({
     defaultValues: {
@@ -45,11 +42,6 @@ export const LoginForm = ({ redirectTo }: LoginFormProps) => {
         });
 
         if (error) {
-          if (error.code === "EMAIL_NOT_VERIFIED") {
-            setShowVerificationComponent(true);
-            toast.error("Please verify your email to continue.");
-            return;
-          }
           toast.error(error.message || "Credential verification failed.");
           return;
         }
@@ -65,10 +57,6 @@ export const LoginForm = ({ redirectTo }: LoginFormProps) => {
       });
     },
   });
-
-  if (showVerificationComponent) {
-    return <EmailVerification email={form.state.values.email} />;
-  }
 
   return (
     <FormWrapper>

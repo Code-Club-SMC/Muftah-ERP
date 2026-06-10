@@ -31,7 +31,7 @@ function SalesOverviewPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Sales Overview</h2>
+        <h1 className="text-3xl font-bold tracking-tight">Sales Overview</h1>
         <p className="text-muted-foreground mt-1">
           Product-wise sales performance and breakdown.
         </p>

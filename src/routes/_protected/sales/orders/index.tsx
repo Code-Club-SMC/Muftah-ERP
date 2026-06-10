@@ -8,14 +8,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DatePickerWithRange } from "@/components/custom/date-range-picker";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { Search, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useGetOrders, useFulfillOrder } from "@/hooks/sales/use-orders";
 import { useGetSalesmen } from "@/hooks/sales/use-sales-people";
 import { useGetOrderBookers } from "@/hooks/sales/use-sales-people";
+import { useGetOrderBookerCommissionTiers } from "@/hooks/sales/use-order-booker-commission";
 import { CreateOrderPadDialog } from "@/components/sales/create-order-pad-dialog";
+import { formatPKR } from "@/lib/currency-format";
 import type { DateRange } from "react-day-picker";
 
 export const Route = createFileRoute("/_protected/sales/orders/")({
@@ -155,11 +157,29 @@ function OrdersPage() {
 }
 
 function OrderRow({ order, salesmen }: { order: any; salesmen: any[] }) {
+  const activeSalesmen = salesmen.filter((s) => s.status === "active");
   const [fulfillOpen, setFulfillOpen] = useState(false);
   const fulfill = useFulfillOrder();
   const totalAmount = order.items?.reduce((sum: number, item: any) => sum + Number(item.amount), 0) || 0;
   const [fulfilledBySalesmanId, setFulfilledBySalesmanId] = useState("");
   const [fulfilledAmount, setFulfilledAmount] = useState(String(totalAmount));
+
+  const { data: tiers } = useGetOrderBookerCommissionTiers(order.orderBookerId ?? "");
+  const flatRate = order.orderBooker?.commissionRate ? Number(order.orderBooker.commissionRate) : 0;
+
+  const amountNum = Number(fulfilledAmount) || totalAmount;
+
+  const commissionPreview = useMemo(() => {
+    if (!tiers || amountNum <= 0) return { rate: flatRate, amount: amountNum * (flatRate / 100), tier: null as any };
+    for (const tier of tiers) {
+      const min = Number(tier.minAmount);
+      const max = tier.maxAmount ? Number(tier.maxAmount) : Infinity;
+      if (amountNum >= min && amountNum <= max) {
+        return { rate: Number(tier.rate), amount: amountNum * (Number(tier.rate) / 100), tier };
+      }
+    }
+    return { rate: flatRate, amount: amountNum * (flatRate / 100), tier: null as any };
+  }, [amountNum, tiers, flatRate]);
 
   const handleFulfill = () => {
     fulfill.mutate(
@@ -167,7 +187,7 @@ function OrderRow({ order, salesmen }: { order: any; salesmen: any[] }) {
         data: {
           id: order.id,
           fulfilledBySalesmanId,
-          fulfilledAmount: Number(fulfilledAmount) || totalAmount,
+          fulfilledAmount: amountNum,
         },
       },
       {
@@ -206,7 +226,7 @@ function OrderRow({ order, salesmen }: { order: any; salesmen: any[] }) {
                     <Select value={fulfilledBySalesmanId} onValueChange={setFulfilledBySalesmanId}>
                       <SelectTrigger><SelectValue placeholder="Select salesman" /></SelectTrigger>
                       <SelectContent>
-                        {salesmen.map((s: any) => (
+                        {activeSalesmen.map((s: any) => (
                           <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                         ))}
                       </SelectContent>
@@ -216,6 +236,39 @@ function OrderRow({ order, salesmen }: { order: any; salesmen: any[] }) {
                     <Label>Fulfilled Amount (PKR)</Label>
                     <Input type="number" value={fulfilledAmount} onChange={(e) => setFulfilledAmount(e.target.value)} />
                   </div>
+
+                  {/* Commission preview */}
+                  {order.orderBooker && (
+                    <div className="border rounded-lg p-3 bg-muted/10 space-y-2">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Commission Preview</div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">Order Booker</span>
+                        <span className="font-semibold">{order.orderBooker.name}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">Fulfilled Amount</span>
+                        <span className="font-mono">{formatPKR(amountNum)}</span>
+                      </div>
+                      {commissionPreview.tier ? (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Applicable Tier</span>
+                          <Badge variant="secondary" className="text-[10px] h-5">
+                            {formatPKR(Number(commissionPreview.tier.minAmount))} — {commissionPreview.tier.maxAmount ? formatPKR(Number(commissionPreview.tier.maxAmount)) : "∞"} @ {commissionPreview.tier.rate}%
+                          </Badge>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Rate</span>
+                          <span className="text-muted-foreground">Flat {commissionPreview.rate}%</span>
+                        </div>
+                      )}
+                      <div className="border-t pt-2 flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">OB Commission</span>
+                        <span className="text-lg font-black font-mono text-emerald-400">{formatPKR(commissionPreview.amount)}</span>
+                      </div>
+                    </div>
+                  )}
+
                   <Button className="w-full" onClick={handleFulfill} disabled={!fulfilledBySalesmanId || fulfill.isPending}>
                     Confirm Fulfillment
                   </Button>

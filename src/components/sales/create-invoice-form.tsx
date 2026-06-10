@@ -11,10 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useGetAllCustomers } from "@/hooks/sales/use-customers";
 import { useCreateInvoice, useUpdateInvoice } from "@/hooks/sales/use-invoices";
 import { useWallets } from "@/hooks/finance/use-finance";
+import { useGetRecipePrices } from "@/hooks/sales/use-sales-config";
 import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { getCartonAvailabilityFn } from "@/server-functions/inventory/get-carton-availability-fn";
-import { getCustomerPriceAgreementsFn } from "@/server-functions/sales/sales-config-fn";
-import { getCustomerDiscountRulesFn } from "@/server-functions/sales/customer-discount-rules-fn";
+import { useGetDistributorDiscountRules } from "@/hooks/sales/use-discount-rules";
 import {
     AlertCircle,
     BanknoteIcon,
@@ -92,6 +92,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
         queryFn: () => getInventoryFn(),
     });
     const { data: walletsData } = useWallets();
+    const { data: recipePricesData } = useGetRecipePrices();
 
     const [customerMode, setCustomerMode] = useState<"existing" | "new">(isDistributorLocked ? "existing" : "existing");
     const [activeWarehouse, setActiveWarehouse] = useState<string>("");
@@ -99,6 +100,20 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
 
     const wallets = walletsData || [];
     const warehouses = inventoryData ?? [];
+
+    const recipePriceMap = useMemo(() => {
+        const map = new Map<string, { invoicePricePerPack: number; retailPricePerPack: number }>();
+        if (!recipePricesData) return map;
+        for (const rp of recipePricesData) {
+            if (rp.invoicePricePerPack != null && rp.retailPricePerPack != null) {
+                map.set(rp.recipeId, {
+                    invoicePricePerPack: rp.invoicePricePerPack,
+                    retailPricePerPack: rp.retailPricePerPack,
+                });
+            }
+        }
+        return map;
+    }, [recipePricesData]);
 
     const { data: cartonAvailability } = useQuery({
         queryKey: ["carton-availability", activeWarehouse],
@@ -295,26 +310,20 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
         return customers.find((c: any) => c.id === selectedCustomerId) || null;
     }, [selectedCustomerId, customers]);
 
-    const { data: distributorPricing } = useQuery({
-        queryKey: ["distributor-pricing", selectedCustomerId],
-        queryFn: async () => {
-            if (!selectedCustomerId) return null;
-            const [agreements, rules] = await Promise.all([
-                getCustomerPriceAgreementsFn({ data: { customerId: selectedCustomerId } }),
-                getCustomerDiscountRulesFn({ data: { customerId: selectedCustomerId } }),
-            ]);
-            const activeAgreements = (agreements || []).filter((a: any) => {
-                const now = new Date();
-                return new Date(a.effectiveFrom) <= now && (!a.effectiveTo || new Date(a.effectiveTo) >= now);
-            });
-            const activeRules = (rules || []).filter((r: any) => {
-                const now = new Date();
-                return new Date(r.effectiveFrom) <= now && (!r.effectiveTo || new Date(r.effectiveTo) >= now);
-            });
-            return { activeAgreementsCount: activeAgreements.length, activeDiscountRulesCount: activeRules.length };
-        },
-        enabled: isDistributorLocked && !!selectedCustomerId,
-    });
+    const { data: distributorDiscountRules } = useGetDistributorDiscountRules(
+        isDistributorLocked ? selectedCustomerId : "",
+        isDistributorLocked && !!selectedCustomerId,
+    );
+
+    // Build a map of recipeId → discount rule for fast lookup
+    const discountRuleMap = useMemo(() => {
+        const map = new Map<string, any>();
+        if (!distributorDiscountRules) return map;
+        for (const rule of distributorDiscountRules) {
+            map.set(rule.recipeId, rule);
+        }
+        return map;
+    }, [distributorDiscountRules]);
 
     return (
         <form
@@ -365,27 +374,22 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                             )}
                         </form.Field>
                     ) : null}
-                    {isDistributorLocked && selectedCustomerData && distributorPricing && (
+                    {isDistributorLocked && selectedCustomerData && (
                         <div className="mt-3 p-3 rounded-lg bg-muted/40 border border-border/60 space-y-1.5">
                             <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground mb-1">
                                 <Info className="size-3.5" />
                                 Distributor Pricing Info
                             </div>
-                            <div className="grid grid-cols-3 gap-3">
+                            <div className="grid grid-cols-2 gap-3">
                                 <div className="flex items-center gap-1.5 text-xs">
                                     <Percent className="size-3 text-muted-foreground" />
                                     <span className="text-muted-foreground">Default Margin:</span>
                                     <span className="font-semibold">{selectedCustomerData.defaultMargin || 0}%</span>
                                 </div>
                                 <div className="flex items-center gap-1.5 text-xs">
-                                    <Tag className="size-3 text-muted-foreground" />
-                                    <span className="text-muted-foreground">Price Agreements:</span>
-                                    <span className="font-semibold">{distributorPricing.activeAgreementsCount}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5 text-xs">
                                     <FileText className="size-3 text-muted-foreground" />
                                     <span className="text-muted-foreground">Discount Rules:</span>
-                                    <span className="font-semibold">{distributorPricing.activeDiscountRulesCount}</span>
+                                    <span className="font-semibold">{distributorDiscountRules?.length || 0}</span>
                                 </div>
                             </div>
                         </div>
@@ -544,6 +548,9 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                                         totalAmount={totalAmount}
                                         getCartonInfo={getCartonInfo}
                                         handleFocus={handleFocus}
+                                        recipePriceMap={recipePriceMap}
+                                        discountRuleMap={discountRuleMap}
+                                        isDistributor={isDistributorLocked}
                                     />
                                 </Section>
 
@@ -597,7 +604,7 @@ function computeTotal(items: ItemFormValue[], availableStock: StockItem[]): numb
     return items.reduce((acc, item) => {
         const stock = findStock(availableStock, item.recipeId);
         const recipeDefault = stock?.recipe?.containersPerCarton || 1;
-        const eCPP = safeEffectiveCPP(item.packsPerCarton, recipeDefault);
+        const eCPP = safeEffectiveCPP(recipeDefault);
         return acc + (item.unitType === "carton"
             ? (item.numberOfCartons || 0) * (item.perCartonPrice || 0)
             : (item.numberOfUnits || 0) * ((item.perCartonPrice || 0) / eCPP));

@@ -151,14 +151,14 @@ export const InventoryDetailsDialog = ({
               <Card className="bg-background shadow-xs min-h-[110px] flex flex-col">
                 <CardContent className="p-4 flex flex-col justify-between h-full space-y-3">
                   <p className="text-[10px] font-black uppercase text-muted-foreground ">
-                    Value / Unit
+                    {isFinished ? "WAC / Pack" : "Value / Unit"}
                   </p>
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-1.5">
                       <span className="text-3xl font-black text-foreground leading-none tracking-tighter">
                         {isFinished
                           ? parseFloat(
-                            material.estimatedCostPerContainer,
+                            (material as any).weightedAverageCostPerPack || material.estimatedCostPerContainer,
                           ).toFixed(2)
                           : parseFloat(material.costPerUnit).toFixed(2)}
                       </span>

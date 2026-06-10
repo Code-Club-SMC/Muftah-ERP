@@ -6,11 +6,10 @@ import {
   advanceInstallments,
   nightShiftRates,
   travelLogs,
-  attendance,
 } from "@/db/schemas/hr-schema";
 import { orderBookerTrips, commissionRecords, orderBookers } from "@/db/schemas/sales-erp-schema";
 import { wallets, transactions } from "@/db/schemas/finance-schema";
-import { eq, and, inArray, gte, lte, sql } from "drizzle-orm";
+import { eq, and, inArray, gte, lte, sql, isNull } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import {
   calculatePayslip,
@@ -19,6 +18,7 @@ import {
   type AttendanceRecord,
   type EmployeeData,
 } from "@/lib/payroll-calculator";
+import { getSalaryAtDate } from "./salary-revisions-fn";
 
 export type AdvanceProcessRecord = {
   id: string;
@@ -172,11 +172,24 @@ export async function generateEmployeePayslipCore(
     }
   }
 
-  // -- 1. Employee -----------------------------------------------------------
+  // -- 1. Employee + Historical Salary -------------------------------------
   const employeeData = await db.query.employees.findFirst({
     where: eq(employees.id, employeeId),
   });
   if (!employeeData) throw new Error(`Employee ${employeeId} not found`);
+
+  // Fetch the salary revision active for this payroll period
+  const salaryRevision = await getSalaryAtDate(employeeId, payrollPeriod.startDate);
+  if (!salaryRevision) {
+    throw new Error(`No salary configuration found for employee ${employeeId} at ${payrollPeriod.startDate}`);
+  }
+
+  // Merge historical salary onto employee data for the calculator
+  const employeeWithHistoricalSalary = {
+    ...employeeData,
+    basicSalary: salaryRevision.basicSalary,
+    allowanceConfig: salaryRevision.allowanceConfig,
+  };
 
   // -- 2. Attendance ---------------------------------------------------------
   const rawAttendance = await db.query.attendance.findMany({
@@ -235,6 +248,7 @@ export async function generateEmployeePayslipCore(
       where: and(
         eq(travelLogs.employeeId, employeeId),
         eq(travelLogs.status, "approved"),
+        isNull(travelLogs.reimbursedAt), // Skip already-reimbursed logs
         and(
           sql`${travelLogs.date} >= ${payrollPeriod.startDate}`,
           sql`${travelLogs.date} <= ${payrollPeriod.endDate}`,
@@ -251,6 +265,14 @@ export async function generateEmployeePayslipCore(
   let dynamicTA = 0;
   let orderBookerCommission = 0;
   let commissionIdsToPay: string[] = [];
+  let commissionBreakdownSnapshot: Array<{
+    orderId: string;
+    orderRef: string;
+    orderDate: string;
+    orderValue: number;
+    rate: number;
+    amount: number;
+  }> = [];
 
   // Find linked order booker for this employee
   const linkedOrderBooker = await db.query.orderBookers.findFirst({
@@ -280,12 +302,27 @@ export async function generateEmployeePayslipCore(
         gte(commissionRecords.calculatedAt, new Date(payrollPeriod.startDate)),
         lte(commissionRecords.calculatedAt, new Date(payrollPeriod.endDate)),
       ),
+      with: {
+        order: {
+          columns: { id: true, billNumber: true, createdAt: true, fulfilledAmount: true },
+        },
+      },
     });
     orderBookerCommission = commissions.reduce(
       (sum, rec) => sum + parseFloat(rec.commissionAmount || "0"),
       0,
     );
     commissionIdsToPay = commissions.map((c) => c.id);
+
+    // Build commission breakdown snapshot for payslip
+    commissionBreakdownSnapshot = commissions.map((rec) => ({
+      orderId: rec.orderId,
+      orderRef: `ORD-${rec.order?.billNumber || rec.orderId.substring(0, 8)}`,
+      orderDate: rec.order?.createdAt ? new Date(rec.order.createdAt).toISOString().split("T")[0] : "",
+      orderValue: parseFloat(rec.order?.fulfilledAmount || rec.fulfilledAmount || "0"),
+      rate: parseFloat(rec.appliedRate || "0"),
+      amount: parseFloat(rec.commissionAmount || "0"),
+    }));
   }
 
   // -- 6. Calculate payslip --------------------------------------------------
@@ -294,11 +331,12 @@ export async function generateEmployeePayslipCore(
     advanceDeduction,
     nightShiftAllowance: nightShiftAllowance ?? additionalAmounts.nightShiftAllowance,
     incentiveAmount:
-      (additionalAmounts.incentiveAmount || 0) + tadaAmount + dynamicTA + orderBookerCommission,
+      (additionalAmounts.incentiveAmount || 0) + tadaAmount + dynamicTA,
+    commissionAmount: orderBookerCommission,
   };
 
   const payslipCalc = calculatePayslip(
-    employeeData as unknown as EmployeeData,
+    employeeWithHistoricalSalary as unknown as EmployeeData,
     formattedAttendance,
     payrollPeriod,
     deductionConfig,
@@ -341,12 +379,29 @@ export async function generateEmployeePayslipCore(
   }));
   const yearlyBradfordScore = calculateYearlyBradfordFactor(yearAttendanceFormatted);
 
+  // -- 6.6 Fetch carried-forward deficit from previous payslip ----------------
+  const previousPayslip = await db.query.payslips.findFirst({
+    where: eq(payslips.employeeId, employeeId),
+    orderBy: (payslips, { desc }) => [desc(payslips.createdAt)],
+  });
+  const previousDeficit = previousPayslip 
+    ? parseFloat(previousPayslip.carriedForwardDeficit || "0")
+    : 0;
+
+  // Add previous deficit to deductions
+  if (previousDeficit > 0) {
+    payslipCalc.totalDeductions += previousDeficit;
+    payslipCalc.netSalary -= previousDeficit;
+  }
+
   // -- 7. Validate wallet balance BEFORE writing anything --------------------
   // Include arrears so the wallet covers the FULL amount the employee is owed.
+  // If netSalary is negative, wallet validation is skipped (no debit needed).
   const totalNetWithArrears = payslipCalc.netSalary + arrearsAmt;
+  const carriedForwardDeficit = payslipCalc.netSalary < 0 ? Math.abs(payslipCalc.netSalary) : 0;
 
   let walletName: string | null = null;
-  if (walletId) {
+  if (walletId && totalNetWithArrears > 0) {
     const [wallet] = await db
       .select({ id: wallets.id, name: wallets.name, balance: wallets.balance })
       .from(wallets)
@@ -389,6 +444,7 @@ export async function generateEmployeePayslipCore(
       .values({
         payrollId,
         employeeId: employeeData.id,
+        salaryRevisionId: salaryRevision.id === "current" ? null : salaryRevision.id,
 
         daysPresent: payslipCalc.daysPresent,
         daysAbsent: payslipCalc.daysAbsent,
@@ -405,6 +461,8 @@ export async function generateEmployeePayslipCore(
         overtimeAmount: payslipCalc.overtimeAmount.toString(),
         nightShiftAllowanceAmount: payslipCalc.nightShiftAllowanceAmount.toString(),
         incentiveAmount: payslipCalc.incentiveAmount.toString(),
+        commissionAmount: payslipCalc.commissionAmount.toString(),
+        commissionBreakdown: commissionBreakdownSnapshot.length > 0 ? commissionBreakdownSnapshot : null,
         bonusAmount: payslipCalc.bonusAmount.toString(),
 
         // Combine notEmployedDeduction into absentDeduction to avoid schema migration,
@@ -420,6 +478,9 @@ export async function generateEmployeePayslipCore(
         // Net = calculator net + rolled-forward arrears from missed cycles
         netSalary: totalNetWithArrears.toString(),
 
+        // Carry-forward deficit (when deductions exceed earnings)
+        carriedForwardDeficit: carriedForwardDeficit.toString(),
+
         // Arrears audit trail -- stored permanently so future missed-cycle
         // detection queries skip these months for this employee.
         arrearsAmount: arrearsAmt.toString(),
@@ -429,6 +490,16 @@ export async function generateEmployeePayslipCore(
         paymentSource: walletName,
         remarks: [
           payslipCalc.remarks,
+          salaryRevision.id === "current"
+            ? `Basic Salary: PKR ${Math.round(parseFloat(salaryRevision.basicSalary as string)).toLocaleString()} (legacy, no revision record)`
+            : `Salary revision #${salaryRevision.id.substring(0, 8)} effective ${salaryRevision.revisionDate}: PKR ${Math.round(parseFloat(salaryRevision.basicSalary as string)).toLocaleString()}`,
+          `Allowances: ${(salaryRevision.allowanceConfig || []).map((a: any) => `${a.name} PKR ${Math.round(a.amount).toLocaleString()}`).join(", ") || "None"}`,
+          previousDeficit > 0
+            ? `Carried Forward Deficit from previous cycle: PKR ${Math.round(previousDeficit).toLocaleString()}`
+            : null,
+          carriedForwardDeficit > 0
+            ? `DEFICIT: PKR ${Math.round(carriedForwardDeficit).toLocaleString()} will be carried forward to next cycle`
+            : null,
           payslipCalc.daysNotEmployed > 0 
             ? `Prorated by PKR ${Math.round(payslipCalc.notEmployedDeduction).toLocaleString()} for ${payslipCalc.daysNotEmployed} pre-joining/cutoff day(s).` 
             : null,
@@ -550,5 +621,295 @@ export async function generateEmployeePayslipCore(
     walletDebited: walletId
       ? { walletId, walletName, amount: totalNetWithArrears }
       : null,
+  };
+}
+
+/**
+ * Simulate payslip generation WITHOUT writing to database.
+ * Returns the same calculation output as generateEmployeePayslipCore
+ * but performs no inserts, updates, or wallet debits.
+ */
+export async function simulateEmployeePayslipCore(
+  input: GeneratePayslipInput,
+) {
+  const {
+    employeeId,
+    payrollPeriod,
+    deductionConfig,
+    additionalAmounts = {},
+    arrears,
+    autoDeductAdvances = true,
+    autoFetchNightShiftRate = true,
+    autoFetchTada = true,
+    earlyCutoffDate,
+    ignorePastUnmarkedDays = false,
+  } = input;
+
+  // -- 0. Validate arrears (fail-fast before any DB work) --------------------
+  const arrearsAmt = arrears?.arrearsAmount ?? 0;
+  const arrearsMonths = arrears?.arrearsFromMonths ?? [];
+
+  if (arrearsMonths.length > 0) {
+    if (arrearsAmt <= 0) {
+      throw new Error("arrearsAmount must be > 0 when arrearsFromMonths is provided.");
+    }
+    if (arrearsMonths.length > 12) {
+      throw new Error("Cannot roll forward more than 12 missed months in a single payslip.");
+    }
+    const todayKey = payrollPeriod.month.substring(0, 7);
+    const monthRe = /^\d{4}-(0[1-9]|1[0-2])$/;
+    for (const m of arrearsMonths) {
+      if (!monthRe.test(m)) {
+        throw new Error(`Invalid arrears month key: "${m}". Must be YYYY-MM format.`);
+      }
+      if (m >= todayKey) {
+        throw new Error(
+          `Arrears month "${m}" is not in the past. Only closed cycles can be rolled forward.`,
+        );
+      }
+    }
+  }
+
+  // -- 1. Employee + Historical Salary -------------------------------------
+  const employeeData = await db.query.employees.findFirst({
+    where: eq(employees.id, employeeId),
+  });
+  if (!employeeData) throw new Error(`Employee ${employeeId} not found`);
+
+  const salaryRevision = await getSalaryAtDate(employeeId, payrollPeriod.startDate);
+  if (!salaryRevision) {
+    throw new Error(`No salary configuration found for employee ${employeeId} at ${payrollPeriod.startDate}`);
+  }
+
+  const employeeWithHistoricalSalary = {
+    ...employeeData,
+    basicSalary: salaryRevision.basicSalary,
+    allowanceConfig: salaryRevision.allowanceConfig,
+  };
+
+  // -- 2. Attendance ---------------------------------------------------------
+  const rawAttendance = await db.query.attendance.findMany({
+    where: (table, { and, gte, lte, eq }) =>
+      and(
+        eq(table.employeeId, employeeId),
+        gte(table.date, payrollPeriod.startDate),
+        lte(table.date, payrollPeriod.endDate),
+      ),
+  });
+
+  const formattedAttendance: AttendanceRecord[] = rawAttendance.map((r) => ({
+    date: r.date,
+    status: r.status,
+    dutyHours: r.dutyHours,
+    overtimeHours: r.overtimeHours,
+    isNightShift: r.isNightShift || false,
+    isApprovedLeave: r.isApprovedLeave ?? false,
+    leaveType: r.leaveType ?? null,
+    overtimeStatus: r.overtimeStatus ?? "pending",
+    isLate: r.isLate ?? false,
+    earlyDepartureStatus: r.earlyDepartureStatus ?? "none",
+  }));
+
+  // -- 3. Salary advances (installment-aware) --------------------------------
+  let advanceDeduction: number;
+  let advanceIdsToProcess: AdvanceProcessRecord[] = [];
+
+  if (autoDeductAdvances && additionalAmounts.advanceDeduction === undefined) {
+    const { totalDeduction, processedRecords } = await calculateEnrichedAdvanceDeductions(employeeId);
+    advanceDeduction = totalDeduction;
+    advanceIdsToProcess = processedRecords;
+  } else {
+    advanceDeduction = additionalAmounts.advanceDeduction ?? 0;
+  }
+
+  // -- 4. Night shift rate ---------------------------------------------------
+  let nightShiftAllowance = additionalAmounts.nightShiftAllowance;
+  if (autoFetchNightShiftRate && nightShiftAllowance === undefined) {
+    const nightShifts = formattedAttendance.filter((r) => r.isNightShift);
+    if (nightShifts.length > 0) {
+      const payrollYear = new Date(payrollPeriod.month).getFullYear();
+      const rateConfig = await db.query.nightShiftRates.findFirst({
+        where: eq(nightShiftRates.year, payrollYear),
+      });
+      nightShiftAllowance = (rateConfig ? parseFloat(rateConfig.ratePerNight) : 0) * nightShifts.length;
+    } else {
+      nightShiftAllowance = 0;
+    }
+  }
+
+  // -- 5. TA/DA from travel logs ---------------------------------------------
+  let tadaAmount = 0;
+  if (autoFetchTada) {
+    const approvedTrips = await db.query.travelLogs.findMany({
+      where: and(
+        eq(travelLogs.employeeId, employeeId),
+        eq(travelLogs.status, "approved"),
+        isNull(travelLogs.reimbursedAt),
+        and(
+          sql`${travelLogs.date} >= ${payrollPeriod.startDate}`,
+          sql`${travelLogs.date} <= ${payrollPeriod.endDate}`,
+        ),
+      ),
+    });
+    tadaAmount = approvedTrips.reduce(
+      (sum, t) => sum + parseFloat(t.totalAmount || "0"),
+      0,
+    );
+  }
+
+  // -- 5.5 Order booker TA + commission --------------------------------------
+  let dynamicTA = 0;
+  let orderBookerCommission = 0;
+  let commissionBreakdownSnapshot: Array<{
+    orderId: string;
+    orderRef: string;
+    orderDate: string;
+    orderValue: number;
+    rate: number;
+    amount: number;
+  }> = [];
+
+  const linkedOrderBooker = await db.query.orderBookers.findFirst({
+    where: eq(orderBookers.employeeId, employeeId),
+  });
+
+  if (linkedOrderBooker) {
+    const trips = await db.query.orderBookerTrips.findMany({
+      where: and(
+        eq(orderBookerTrips.orderBookerId, linkedOrderBooker.id),
+        gte(orderBookerTrips.tripDate, new Date(payrollPeriod.startDate)),
+        lte(orderBookerTrips.tripDate, new Date(payrollPeriod.endDate)),
+      ),
+    });
+    dynamicTA = trips.reduce((sum, trip) => {
+      const tada = parseFloat(trip.tadaAmount || "0");
+      const fuel = parseFloat(trip.fuelCost || "0");
+      return sum + tada + fuel;
+    }, 0);
+
+    const commissions = await db.query.commissionRecords.findMany({
+      where: and(
+        eq(commissionRecords.orderBookerId, linkedOrderBooker.id),
+        eq(commissionRecords.status, "accrued"),
+        gte(commissionRecords.calculatedAt, new Date(payrollPeriod.startDate)),
+        lte(commissionRecords.calculatedAt, new Date(payrollPeriod.endDate)),
+      ),
+      with: {
+        order: {
+          columns: { id: true, billNumber: true, createdAt: true, fulfilledAmount: true },
+        },
+      },
+    });
+    orderBookerCommission = commissions.reduce(
+      (sum, rec) => sum + parseFloat(rec.commissionAmount || "0"),
+      0,
+    );
+
+    commissionBreakdownSnapshot = commissions.map((rec) => ({
+      orderId: rec.orderId,
+      orderRef: `ORD-${rec.order?.billNumber || rec.orderId.substring(0, 8)}`,
+      orderDate: rec.order?.createdAt ? new Date(rec.order.createdAt).toISOString().split("T")[0] : "",
+      orderValue: parseFloat(rec.order?.fulfilledAmount || rec.fulfilledAmount || "0"),
+      rate: parseFloat(rec.appliedRate || "0"),
+      amount: parseFloat(rec.commissionAmount || "0"),
+    }));
+  }
+
+  // -- 6. Calculate payslip --------------------------------------------------
+  const mergedAdditional = {
+    ...additionalAmounts,
+    advanceDeduction,
+    nightShiftAllowance: nightShiftAllowance ?? additionalAmounts.nightShiftAllowance,
+    incentiveAmount:
+      (additionalAmounts.incentiveAmount || 0) + tadaAmount + dynamicTA,
+    commissionAmount: orderBookerCommission,
+  };
+
+  const payslipCalc = calculatePayslip(
+    employeeWithHistoricalSalary as unknown as EmployeeData,
+    formattedAttendance,
+    payrollPeriod,
+    deductionConfig,
+    mergedAdditional,
+    earlyCutoffDate,
+  );
+
+  // -- 6.1 Strict validation for missing attendance --------------------------
+  const isSalesOrOB = employeeData.isSalesman || employeeData.isOrderBooker;
+  if (payslipCalc.unmarkedDays > 0 && !ignorePastUnmarkedDays && !isSalesOrOB) {
+    const err = new Error(`PAST_UNMARKED_DAYS:${payslipCalc.unmarkedDays}`);
+    err.name = "ValidationError";
+    throw err;
+  }
+
+  // -- 6.5 Yearly Bradford Factor --------------------------------------------
+  const payrollYear = new Date(payrollPeriod.month).getFullYear();
+  const yearStart = `${payrollYear}-01-01`;
+  const yearEnd = `${payrollYear}-12-31`;
+  const yearAttendanceRaw = await db.query.attendance.findMany({
+    where: (table, { and, eq, gte, lte }) =>
+      and(
+        eq(table.employeeId, employeeId),
+        gte(table.date, yearStart),
+        lte(table.date, yearEnd),
+      ),
+  });
+  const yearAttendanceFormatted: AttendanceRecord[] = yearAttendanceRaw.map((r) => ({
+    date: r.date,
+    status: r.status as any,
+    dutyHours: r.dutyHours,
+    overtimeHours: r.overtimeHours,
+    isNightShift: r.isNightShift || false,
+    isApprovedLeave: r.isApprovedLeave ?? false,
+    leaveType: r.leaveType ?? null,
+    overtimeStatus: r.overtimeStatus ?? "pending",
+    isLate: r.isLate ?? false,
+    earlyDepartureStatus: r.earlyDepartureStatus ?? "none",
+  }));
+  const yearlyBradfordScore = calculateYearlyBradfordFactor(yearAttendanceFormatted);
+
+  // -- 6.6 Fetch carried-forward deficit from previous payslip ----------------
+  const previousPayslip = await db.query.payslips.findFirst({
+    where: eq(payslips.employeeId, employeeId),
+    orderBy: (payslips, { desc }) => [desc(payslips.createdAt)],
+  });
+  const previousDeficit = previousPayslip 
+    ? parseFloat(previousPayslip.carriedForwardDeficit || "0")
+    : 0;
+
+  if (previousDeficit > 0) {
+    payslipCalc.totalDeductions += previousDeficit;
+    payslipCalc.netSalary -= previousDeficit;
+  }
+
+  const totalNetWithArrears = payslipCalc.netSalary + arrearsAmt;
+  const carriedForwardDeficit = payslipCalc.netSalary < 0 ? Math.abs(payslipCalc.netSalary) : 0;
+
+  // -- Return simulation result (NO DB WRITES) --------------------------------
+  return {
+    employee: {
+      id: employeeData.id,
+      employeeCode: employeeData.employeeCode,
+      firstName: employeeData.firstName,
+      lastName: employeeData.lastName,
+      designation: employeeData.designation,
+      cnic: employeeData.cnic,
+      bankName: employeeData.bankName,
+      bankAccountNumber: employeeData.bankAccountNumber,
+    },
+    calculation: payslipCalc,
+    yearlyBradfordScore,
+    arrearsAmount: arrearsAmt,
+    arrearsFromMonths: arrearsMonths,
+    totalNetWithArrears,
+    carriedForwardDeficit,
+    previousDeficit,
+    commissionBreakdown: commissionBreakdownSnapshot,
+    advanceProcessRecords: advanceIdsToProcess,
+    salaryRevision: {
+      id: salaryRevision.id,
+      revisionDate: salaryRevision.revisionDate,
+      basicSalary: salaryRevision.basicSalary,
+    },
   };
 }

@@ -20,7 +20,7 @@ const addUserSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Enter a valid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  role: z.enum(["operator", "finance-manager", "super-admin", "admin"]),
+  roleSlug: z.enum(["operator", "finance-manager", "super-admin", "admin"]),
 });
 
 const roleOptions = [
@@ -41,7 +41,7 @@ export const AddUserForm = ({ onSuccess }: Props) => {
       name: "",
       email: "",
       password: "",
-      role: "operator" as "operator" | "finance-manager" | "super-admin" | "admin",
+      roleSlug: "operator" as "operator" | "finance-manager" | "super-admin" | "admin",
     },
     validators: { onSubmit: addUserSchema },
     onSubmit: async ({ value }) => {
@@ -151,7 +151,7 @@ export const AddUserForm = ({ onSuccess }: Props) => {
         </form.Field>
 
         {/* Role */}
-        <form.Field name="role">
+        <form.Field name="roleSlug">
           {(field) => (
             <Field className="space-y-1.5">
               <FieldLabel className="text-[12.5px] font-medium text-foreground/80 flex items-center gap-1.5">

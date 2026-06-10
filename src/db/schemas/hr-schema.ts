@@ -87,7 +87,7 @@ export const employees = pgTable("employees", {
 
   // Base Calculation Fields
   standardDutyHours: integer("standard_duty_hours").default(8).notNull(),
-  standardSalary: decimal("standard_salary", {
+  basicSalary: decimal("basic_salary", {
     precision: 12,
     scale: 2,
   }).default("0"),
@@ -122,16 +122,30 @@ export const employees = pgTable("employees", {
   leaveYearStart: date("leave_year_start"), // tracks which year current leave balance belongs to
   sickLeaveBalance: integer("sick_leave_balance").default(10),
 
-  // Incentives / Sales
+  // Sales roles
   isOrderBooker: boolean("is_order_booker").default(false).notNull(),
   isSalesman: boolean("is_salesman").default(false).notNull(),
-  commissionRate: decimal("commission_rate", {
-    precision: 5,
-    scale: 2,
-  }).default("0"),
 
   ...timestamps,
 });
+
+// --- SALARY REVISIONS (Historical salary & allowance tracking) ---
+export const salaryRevisions = pgTable("salary_revisions", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  employeeId: text("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  revisionDate: date("revision_date").notNull(),
+  basicSalary: decimal("basic_salary", { precision: 12, scale: 2 }).notNull(),
+  allowanceConfig: jsonb("allowance_config").$type<AllowanceConfig[]>().notNull(),
+  reason: text("reason").notNull(),
+  changedById: text("changed_by_id").references(() => user.id),
+  ...timestamps,
+}, (table) => ({
+  employeeDateIdx: index("idx_salary_revisions_employee_date").on(table.employeeId, table.revisionDate),
+}));
 
 // --- ATTENDANCE ---
 export const attendance = pgTable(
@@ -227,6 +241,8 @@ export const payslips = pgTable("payslips", {
   employeeId: text("employee_id")
     .notNull()
     .references(() => employees.id),
+  salaryRevisionId: text("salary_revision_id")
+    .references(() => salaryRevisions.id),
 
   // Attendance Summary
   daysPresent: integer("days_present").default(0),
@@ -244,6 +260,10 @@ export const payslips = pgTable("payslips", {
     .$type<Record<string, number>>()
     .default({}),
   incentiveAmount: decimal("incentive_amount", {
+    precision: 12,
+    scale: 2,
+  }).default("0"),
+  commissionAmount: decimal("commission_amount", {
     precision: 12,
     scale: 2,
   }).default("0"),
@@ -298,6 +318,24 @@ export const payslips = pgTable("payslips", {
     scale: 2,
   }).notNull(),
   netSalary: decimal("net_salary", { precision: 12, scale: 2 }).notNull(),
+
+  // Carry-Forward Deficit
+  // When deductions exceed earnings, netSalary becomes negative.
+  // This field stores the deficit amount that will be carried forward
+  // as a priority deduction in the next pay cycle.
+  carriedForwardDeficit: decimal("carried_forward_deficit", { precision: 12, scale: 2 }).default("0"),
+
+  // Commission Breakdown Snapshot
+  // Frozen at payroll generation time — per-order commission detail.
+  // Structure: [{ orderId, orderRef, orderDate, orderValue, rate, amount }]
+  commissionBreakdown: jsonb("commission_breakdown").$type<Array<{
+    orderId: string;
+    orderRef: string;
+    orderDate: string;
+    orderValue: number;
+    rate: number;
+    amount: number;
+  }>>(),
 
   // Arrears Roll-Forward
   // When a missed prior-cycle salary is included in this slip, these fields
@@ -396,9 +434,16 @@ export const travelLogs = pgTable("travel_logs", {
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
 
   purpose: text("purpose"),
-  status: text("status").default("pending").notNull(),
+  status: text("status").default("pending").notNull(), // "pending" | "approved" | "rejected" | "reimbursed"
   approvedBy: text("approved_by").references(() => user.id),
 
+  // Standalone reimbursement tracking (outside payroll)
+  reimbursedAt: timestamp("reimbursed_at"),
+  reimbursedBy: text("reimbursed_by").references(() => user.id),
+  reimbursedVia: text("reimbursed_via"), // "payroll" | "cash" | "bank_transfer" | "wallet"
+  reimbursedAmount: decimal("reimbursed_amount", { precision: 10, scale: 2 }),
+
+  // Payroll linkage (legacy / when reimbursed_via = "payroll")
   paidInPayslipId: text("paid_in_payslip_id").references(() => payslips.id),
 
   ...timestamps,
@@ -449,6 +494,53 @@ export const bradfordAuditLog = pgTable("bradford_audit_log", {
   performedAt: timestamp("performed_at").defaultNow().notNull(),
 });
 
+// --- BRADFORD FACTOR SNAPSHOTS (Monthly frozen attendance summary) ---
+export const bradfordSnapshots = pgTable("bradford_snapshots", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+
+  employeeId: text("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  payrollId: text("payroll_id")
+    .notNull()
+    .references(() => payrolls.id, { onDelete: "cascade" }),
+  payslipId: text("payslip_id")
+    .references(() => payslips.id, { onDelete: "set null" }),
+
+  snapshotYearMonth: text("snapshot_year_month").notNull(), // "YYYY-MM"
+
+  // Raw attendance counts (frozen at close)
+  totalAbsences: integer("total_absences").notNull(),
+  totalSickLeaves: integer("total_sick_leaves").notNull(),
+  totalAnnualLeaves: integer("total_annual_leaves").notNull(),
+  totalLateArrivals: integer("total_late_arrivals").notNull(),
+  totalEarlyDepartures: integer("total_early_departures").notNull(),
+  nightShiftsCount: integer("night_shifts_count").default(0).notNull(),
+
+  // Computed Bradford factor at close
+  bradfordFactor: decimal("bradford_factor", { precision: 8, scale: 2 }).notNull(),
+
+  // Attendance detail JSON (array of daily records for audit)
+  dailyAttendanceJson: jsonb("daily_attendance_json").$type<{
+    date: string;
+    status: string;
+    isLate: boolean;
+    earlyDepartureStatus: string;
+    leaveType: string | null;
+  }[]>().notNull(),
+
+  // Roll-forward info
+  unmarkedDaysAtClose: integer("unmarked_days_at_close").default(0).notNull(),
+  remarks: text("remarks"),
+
+  ...timestamps,
+}, (table) => ({
+  employeeMonthIdx: index("idx_bradford_snapshots_employee_month").on(table.employeeId, table.snapshotYearMonth),
+  payrollIdx: index("idx_bradford_snapshots_payroll").on(table.payrollId),
+}));
+
 // --- RELATIONS ---
 export const employeeRelations = relations(employees, ({ one, many }) => ({
   user: one(user, {
@@ -457,6 +549,18 @@ export const employeeRelations = relations(employees, ({ one, many }) => ({
   }),
   attendance: many(attendance),
   payslips: many(payslips),
+  salaryRevisions: many(salaryRevisions),
+}));
+
+export const salaryRevisionRelations = relations(salaryRevisions, ({ one }) => ({
+  employee: one(employees, {
+    fields: [salaryRevisions.employeeId],
+    references: [employees.id],
+  }),
+  changedBy: one(user, {
+    fields: [salaryRevisions.changedById],
+    references: [user.id],
+  }),
 }));
 
 export const attendanceRelations = relations(attendance, ({ one }) => ({
@@ -483,6 +587,10 @@ export const payslipRelations = relations(payslips, ({ one }) => ({
     fields: [payslips.employeeId],
     references: [employees.id],
   }),
+  salaryRevision: one(salaryRevisions, {
+    fields: [payslips.salaryRevisionId],
+    references: [salaryRevisions.id],
+  }),
 }));
 
 export const salaryAdvanceRelations = relations(salaryAdvances, ({ one, many }) => ({
@@ -508,6 +616,21 @@ export const advanceInstallmentRelations = relations(advanceInstallments, ({ one
   }),
   payslip: one(payslips, {
     fields: [advanceInstallments.payslipId],
+    references: [payslips.id],
+  }),
+}));
+
+export const bradfordSnapshotRelations = relations(bradfordSnapshots, ({ one }) => ({
+  employee: one(employees, {
+    fields: [bradfordSnapshots.employeeId],
+    references: [employees.id],
+  }),
+  payroll: one(payrolls, {
+    fields: [bradfordSnapshots.payrollId],
+    references: [payrolls.id],
+  }),
+  payslip: one(payslips, {
+    fields: [bradfordSnapshots.payslipId],
     references: [payslips.id],
   }),
 }));

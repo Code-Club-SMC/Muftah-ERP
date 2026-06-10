@@ -88,7 +88,7 @@ export const InvoicesTable = ({ onSheetOpenChange }: Props) => {
       accessorKey: "slipNumber",
       header: "Invoice No.",
       cell: ({ row }) => (
-        <span className="text-sm font-mono font-medium text-primary">
+        <span className="text-sm font-mono font-medium text-primary tabular-nums">
           {row.original.slipNumber || "—"}
         </span>
       ),
@@ -194,14 +194,16 @@ export const InvoicesTable = ({ onSheetOpenChange }: Props) => {
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Invoice No.</Label>
+          <Label htmlFor="invoice-search" className="text-xs text-muted-foreground">Invoice No.</Label>
           <div className="flex items-center gap-2">
             <Input
+              id="invoice-search"
               placeholder="e.g. INV-42"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={handleSearchKeyDown}
               className="w-36 h-9 text-sm font-mono"
+              aria-label="Search invoices by invoice number"
             />
             <Button
               size="sm"
@@ -209,7 +211,7 @@ export const InvoicesTable = ({ onSheetOpenChange }: Props) => {
               onClick={handleSearch}
               className="h-9 gap-1.5 px-3"
             >
-              <Search className="size-3.5" />
+              <Search className="size-3.5" aria-hidden="true" />
               Search
             </Button>
           </div>
@@ -244,11 +246,11 @@ export const InvoicesTable = ({ onSheetOpenChange }: Props) => {
               {total > 0 && ` · ${total} total`}
             </span>
             <div className="flex items-center gap-1.5">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="h-8 px-3">
-                <ChevronLeft className="h-3.5 w-3.5 mr-0.5" /> Prev
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="h-8 px-3" aria-label="Previous page">
+                <ChevronLeft className="h-3.5 w-3.5 mr-0.5" aria-hidden="true" /> Prev
               </Button>
-              <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))} className="h-8 px-3">
-                Next <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
+              <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))} className="h-8 px-3" aria-label="Next page">
+                Next <ChevronRight className="h-3.5 w-3.5 ml-0.5" aria-hidden="true" />
               </Button>
             </div>
           </div>

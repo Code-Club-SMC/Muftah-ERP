@@ -265,7 +265,10 @@ const CustomerRow = ({
           variant="ghost"
           size="icon"
           className="size-8 p-0 hover:bg-muted/50"
-          onClick={() => navigate({ to: "/sales/customers/$customerId", params: { customerId: customer.id }, search: { page: 1 } })}
+          onClick={() => navigate({
+            to: "/sales/people/distributors/$customerId/ledger",
+            params: { customerId: customer.id },
+          })}
         >
           <BookOpen className="size-4 text-muted-foreground" />
         </Button>

@@ -39,11 +39,11 @@ export type StockItem = {
 export const PKR = (v: number) =>
     `PKR ${v.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
-export const safeEffectiveCPP = (packsPerCarton: number, recipeDefault: number): number =>
-    Math.max(1, effectiveCPP(packsPerCarton ?? 0, recipeDefault || 1));
+export const safeEffectiveCPP = (recipeDefault: number): number =>
+    Math.max(1, recipeDefault || 1);
 
 export function lineAmount(item: ItemFormValue, recipeContainersPerCarton: number): number {
-    const eCPP = safeEffectiveCPP(item.packsPerCarton, recipeContainersPerCarton);
+    const eCPP = safeEffectiveCPP(recipeContainersPerCarton);
     if (item.unitType === "carton") {
         return (item.numberOfCartons || 0) * (item.perCartonPrice || 0);
     }

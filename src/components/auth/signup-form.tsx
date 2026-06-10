@@ -1,7 +1,7 @@
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
 import { Loader2, Mail, LockKeyhole, ShieldCheck, User } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
-import { getAbsoluteAuthUrl } from "@/lib/auth-url";
 import { signupSchema } from "@/lib/validators";
 import { FormWrapper } from "../custom/form-wrapper";
 import { Field, FieldError, FieldGroup, FieldLabel } from "../ui/field";
@@ -21,12 +20,9 @@ import {
   PasswordInput,
   PasswordInputStrengthChecker,
 } from "../custom/password-input";
-import { EmailVerification } from "./email-verification";
 
 export const SignupForm = () => {
   const [isPending, startTransition] = useTransition();
-  const [showVerificationComponent, setShowVerificationComponent] =
-    useState(false);
 
   const form = useForm({
     defaultValues: {
@@ -44,7 +40,6 @@ export const SignupForm = () => {
           email: value.email,
           password: value.password,
           name: value.fullName,
-          callbackURL: getAbsoluteAuthUrl("/email-verification"),
         });
 
         if (error) {
@@ -53,14 +48,10 @@ export const SignupForm = () => {
         }
 
         toast.success("Account created successfully.");
-        setShowVerificationComponent(true);
+        window.location.href = "/login";
       });
     },
   });
-
-  if (showVerificationComponent) {
-    return <EmailVerification email={form.state.values.email} />;
-  }
 
   // ✅ FormWrapper kept.
   // ✅ Removed the outer <div className="w-full max-w-[400px] mx-auto animate-in ...">

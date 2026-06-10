@@ -12,7 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { recipes, warehouses } from "./inventory-schema";
 import { user } from "./auth-schema";
-import { salesmen, promotionalRules, customerPriceAgreements, customerDiscountRules } from "./sales-erp-schema";
+import { salesmen, discountRules } from "./sales-erp-schema";
 
 const timestamps = {
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -122,15 +122,21 @@ export const invoiceItems = pgTable("invoice_items", {
   tpPrice: decimal("tp_price", { precision: 12, scale: 2 }),
   marginPercent: decimal("margin_percent", { precision: 12, scale: 2 }),
   actualPackSize: integer("actual_pack_size").default(0),
-  promoRuleId: text("promo_rule_id").references(() => promotionalRules.id),
+  discountRuleId: text("discount_rule_id").references(() => discountRules.id),
   freeCartons: integer("free_cartons").default(0),
   isPriceOverride: boolean("is_price_override").default(false),
-  priceAgreementId: text("price_agreement_id").references(() => customerPriceAgreements.id),
-  customerDiscountRuleId: text("customer_discount_rule_id").references(() => customerDiscountRules.id, { onDelete: "restrict" }),
-  customerDiscountAmount: decimal("customer_discount_amount", { precision: 12, scale: 2 }).default("0"),
+  costOfGoodsSold: decimal("cost_of_goods_sold", { precision: 12, scale: 2 })
+    .notNull()
+    .default("0"),
+  costOfGoodsSoldPerUnit: decimal("cost_of_goods_sold_per_unit", {
+    precision: 10,
+    scale: 4,
+  })
+    .notNull()
+    .default("0"),
   ...timestamps,
 }, (table) => ({
-  customerDiscountRuleIdx: index("idx_invoice_items_customer_discount_rule").on(table.customerDiscountRuleId),
+  discountRuleIdx: index("idx_invoice_items_discount_rule").on(table.discountRuleId),
 }));
 
 // --- RELATIONS ---
@@ -168,16 +174,8 @@ export const invoiceItemsRelations = relations(invoiceItems, ({ one }) => ({
     fields: [invoiceItems.recipeId],
     references: [recipes.id],
   }),
-  promoRule: one(promotionalRules, {
-    fields: [invoiceItems.promoRuleId],
-    references: [promotionalRules.id],
-  }),
-  priceAgreement: one(customerPriceAgreements, {
-    fields: [invoiceItems.priceAgreementId],
-    references: [customerPriceAgreements.id],
-  }),
-  customerDiscountRule: one(customerDiscountRules, {
-    fields: [invoiceItems.customerDiscountRuleId],
-    references: [customerDiscountRules.id],
+  discountRule: one(discountRules, {
+    fields: [invoiceItems.discountRuleId],
+    references: [discountRules.id],
   }),
 }));

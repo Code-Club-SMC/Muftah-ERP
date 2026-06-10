@@ -16,6 +16,7 @@ export const MODULE_KEYS = [
   "inventory",
   "suppliers",
   "sales",
+  "order-booker",
   "finance",
   "hr",
   "operator",
@@ -488,7 +489,7 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   },
   {
     key: "order-booker.view",
-    moduleKey: "sales",
+    moduleKey: "order-booker",
     label: "Access order booker portal",
     description: "Open the self-service order booker portal.",
     kind: "route",
@@ -496,14 +497,14 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   },
   {
     key: "order-booker.orders.manage",
-    moduleKey: "sales",
+    moduleKey: "order-booker",
     label: "Manage own orders",
     description: "Create and view own orders in the portal.",
     kind: "action",
   },
   {
     key: "order-booker.trips.manage",
-    moduleKey: "sales",
+    moduleKey: "order-booker",
     label: "Manage own trips",
     description: "Log and view own trips in the portal.",
     kind: "action",
@@ -667,10 +668,6 @@ export const ROUTE_PERMISSION_RULES: Array<{
     permissions: ["suppliers.view"],
   },
   {
-    matcher: /^\/sales(?:\/.*)?$/,
-    permissions: ["sales.view"],
-  },
-  {
     matcher: /^\/sales\/people(?:\/.*)?$/,
     permissions: ["sales.people.view"],
   },
@@ -689,6 +686,10 @@ export const ROUTE_PERMISSION_RULES: Array<{
   {
     matcher: /^\/sales\/recovery(?:\/.*)?$/,
     permissions: ["sales.recovery.view"],
+  },
+  {
+    matcher: /^\/sales(?:\/.*)?$/,
+    permissions: ["sales.view"],
   },
   {
     matcher: /^\/finance(?:\/.*)?$/,
@@ -733,6 +734,11 @@ export const MODULE_PERMISSION_GROUPS: Record<
   inventory: { view: "inventory.view", manage: "inventory.manage", accent: "cyan" },
   suppliers: { view: "suppliers.view", manage: "suppliers.manage", accent: "orange" },
   sales: { view: "sales.view", manage: "sales.manage", accent: "emerald" },
+  "order-booker": {
+    view: "order-booker.view",
+    manage: "order-booker.orders.manage",
+    accent: "lime",
+  },
   finance: { view: "finance.view", manage: "finance.manage", accent: "sky" },
   hr: { view: "hr.view", manage: "hr.manage", accent: "rose" },
   operator: { view: "operator.view", manage: "operator.run.log", accent: "yellow" },
@@ -753,6 +759,8 @@ export const ROLE_BADGE_STYLES: Record<string, string> = {
     "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   operator:
     "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  "order-booker":
+    "border-lime-500/30 bg-lime-500/10 text-lime-700 dark:text-lime-300",
 };
 
 export const LANDING_PATH_OPTIONS = [
@@ -765,6 +773,7 @@ export const LANDING_PATH_OPTIONS = [
   "/suppliers",
   "/sales/new-invoice",
   "/sales/customers",
+  "/order-booker",
   "/finance/accounts",
   "/finance/expenses",
   "/finance/ledger",
@@ -844,6 +853,7 @@ export function getFirstAccessiblePath(grantedPermissions: Iterable<string>) {
     "/dashboard",
     "/finance/accounts",
     "/sales/customers",
+    "/order-booker",
     "/operator",
     "/manufacturing/productions",
     "/inventory/warehouses",

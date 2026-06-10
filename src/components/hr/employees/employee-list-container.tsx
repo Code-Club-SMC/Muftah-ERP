@@ -55,7 +55,7 @@ export const EmployeeListContainer = () => {
 
   const totalPayroll = employees
     .filter((e) => e.status === "active")
-    .reduce((acc, curr) => acc + parseFloat(curr.standardSalary || "0"), 0);
+    .reduce((acc, curr) => acc + parseFloat(curr.basicSalary || "0"), 0);
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-6 font-sans antialiased">

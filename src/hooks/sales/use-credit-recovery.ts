@@ -8,7 +8,6 @@ import {
   createRecoveryAttemptFn,
   getRecoveryAttemptsFn,
   escalateRecoveryFn,
-  autoAssignOverdueSlipsFn,
 } from "@/server-functions/sales/credit-recovery-fn";
 import { toast } from "sonner";
 
@@ -122,15 +121,4 @@ export function useEscalateRecovery() {
   });
 }
 
-export function useAutoAssignOverdueSlips() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => autoAssignOverdueSlipsFn({ data: {} }),
-    onSuccess: (result) => {
-      toast.success(`${result.assignedCount} slips auto-assigned`);
-      qc.invalidateQueries({ queryKey: recoveryKeys.all });
-      qc.invalidateQueries({ queryKey: ["overdue-slips"] });
-    },
-    onError: (err: any) => toast.error(err.message || "Auto-assign failed"),
-  });
-}
+

@@ -107,6 +107,8 @@ export function RecordPaymentDialog({ open, onOpenChange, customerId }: Props) {
                   step="1"
                   value={field.state.value || ""}
                   onChange={(e) => field.handleChange(Number(e.target.value))}
+                  autoComplete="off"
+                  aria-label="Payment amount in PKR"
                 />
                 <FieldError errors={field.state.meta.errors} />
               </Field>
@@ -121,7 +123,7 @@ export function RecordPaymentDialog({ open, onOpenChange, customerId }: Props) {
                   value={field.state.value}
                   onValueChange={(val: any) => field.handleChange(val)}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Select payment method">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -146,7 +148,7 @@ export function RecordPaymentDialog({ open, onOpenChange, customerId }: Props) {
                         value={field.state.value}
                         onValueChange={field.handleChange}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger aria-label="Select deposit account">
                           <SelectValue placeholder="Select account" />
                         </SelectTrigger>
                         <SelectContent>
@@ -154,9 +156,9 @@ export function RecordPaymentDialog({ open, onOpenChange, customerId }: Props) {
                             <SelectItem key={w.id} value={w.id}>
                               <span className="flex items-center gap-2">
                                 {w.type === "bank" ? (
-                                  <Building2 className="size-3.5 text-blue-500" />
+                                  <Building2 className="size-3.5 text-blue-500" aria-hidden="true" />
                                 ) : (
-                                  <Banknote className="size-3.5 text-emerald-500" />
+                                  <Banknote className="size-3.5 text-emerald-500" aria-hidden="true" />
                                 )}
                                 {w.name}
                               </span>
@@ -192,8 +194,9 @@ export function RecordPaymentDialog({ open, onOpenChange, customerId }: Props) {
                 <Textarea
                   value={field.state.value}
                   onChange={(e) => field.handleChange(e.target.value)}
-                  placeholder="Add any extra details here..."
+                  placeholder="Add any extra details here…"
                   className="resize-none h-20"
+                  aria-label="Payment notes"
                 />
               </Field>
             )}

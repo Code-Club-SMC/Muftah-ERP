@@ -80,6 +80,7 @@ export const addExpenseSchema = z.object({
 
 export const createPaymentSchema = z.object({
   customerId: z.string().min(1, "Customer is required"),
+  invoiceId: z.string().min(1, "Invoice is required - every payment must be linked to an invoice"),
   amount: z.number().positive("Amount must be greater than 0"),
   method: z.enum(["cash", "bank_transfer", "expense_offset"]).default("cash"),
   reference: z.string().optional(),
@@ -183,8 +184,10 @@ export const createOrderSchema = z.object({
   items: z.array(
     z.object({
       productId: z.string().min(1, "Product is required"),
+      recipeId: z.string().min(1, "Recipe is required"),
       unitType: z.enum(["full_carton", "half_carton", "pack", "shopper"]).default("full_carton"),
       quantity: z.number().int().positive("Quantity must be greater than 0"),
+      adminMargin: z.number().nonnegative().default(0),
       rate: z.number().nonnegative("Rate must be non-negative"),
     }),
   ).min(1, "At least one item is required"),

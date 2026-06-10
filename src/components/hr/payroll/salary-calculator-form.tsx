@@ -333,7 +333,9 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                         ) : null;
                                     })()}
                                     <SummaryRow label="Overtime Pay" value={calculation.overtimeAmount} highlight />
-                                    <SummaryRow label="Bonus & Incentives" value={calculation.bonusAmount + calculation.incentiveAmount} highlight />
+                                    <SummaryRow label="Incentives & TA/DA" value={calculation.incentiveAmount} highlight />
+                                    <SummaryRow label="Commission" value={calculation.commissionAmount} highlight />
+                                    <SummaryRow label="Bonus & Eid Allowance" value={calculation.bonusAmount} highlight />
                                     <TableRow className="bg-muted/10 font-semibold">
                                         <TableCell className="py-2.5">Total Gross Earnings</TableCell>
                                         <TableCell className="text-right py-2.5 text-emerald-700">PKR {Math.round(calculation.grossSalary + totalAttendanceDeduction).toLocaleString()}</TableCell>

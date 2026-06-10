@@ -3,7 +3,6 @@ import { db } from "@/db";
 import {
   productionRuns,
   materialStock,
-  productionMaterialsUsed,
   inventoryAuditLog,
   recipes,
   recipeIngredients,
@@ -14,6 +13,10 @@ import {
 import { requireManufacturingRunManageMiddleware } from "@/lib/middlewares";
 import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  calculateTotalUnits,
+  calculateTotalInventoryValue,
+} from "@/lib/wac";
 
 const cancelProductionSchema = z.object({
   productionRunId: z.string().min(1, "Production run ID is required"),
@@ -62,7 +65,7 @@ export const cancelProductionFn = createServerFn()
       const completedUnits = run.completedUnits || 0;
       const target = run.containersProduced;
 
-      if (completedUnits < target) {
+      if (completedUnits < target && target > 0) {
         // There are unused chemicals to return
         const unusedRatio = (target - completedUnits) / target;
 
@@ -131,6 +134,34 @@ export const cancelProductionFn = createServerFn()
               updatedAt: new Date(),
             })
             .where(eq(finishedGoodsStock.id, existingStock.id));
+
+          // Recalculate total inventory value after quantity change.
+          // WAC per unit stays the same — only the total value changes.
+          const containersPerCarton = recipe.containersPerCarton || 0;
+          const [updatedStock] = await tx
+            .select()
+            .from(finishedGoodsStock)
+            .where(eq(finishedGoodsStock.id, existingStock.id));
+
+          if (updatedStock) {
+            const remainingTotalUnits = calculateTotalUnits(
+              updatedStock.quantityCartons,
+              updatedStock.quantityContainers,
+              containersPerCarton,
+            );
+            const currentWAC = parseFloat(
+              updatedStock.weightedAverageCostPerPack?.toString() || "0",
+            );
+            const newValue = calculateTotalInventoryValue(remainingTotalUnits, currentWAC);
+
+            await tx
+              .update(finishedGoodsStock)
+              .set({
+                totalInventoryValue: newValue.toFixed(2),
+                updatedAt: new Date(),
+              })
+              .where(eq(finishedGoodsStock.id, existingStock.id));
+          }
         }
 
         // Audit log for finished goods reversal

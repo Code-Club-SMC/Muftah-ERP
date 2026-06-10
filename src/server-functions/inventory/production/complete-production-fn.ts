@@ -15,6 +15,13 @@ import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { hasPermission } from "@/lib/rbac";
 import { createId } from "@paralleldrive/cuid2";
+import {
+  calculateActualRunCost,
+  calculateNewWAC,
+  calculateWACPerCarton,
+  calculateTotalUnits,
+  calculateTotalInventoryValue,
+} from "@/lib/wac";
 
 const completeProductionSchema = z.object({
   productionRunId: z.string().min(1, "Production run ID is required"),
@@ -203,13 +210,15 @@ export const completeProductionFn = createServerFn()
           ),
         );
 
-      if (itemsPerCarton > 0 && recipe.cartonPackagingId) {
+      const containersPerCarton = recipe.containersPerCarton || 0;
+
+      if (containersPerCarton > 0 && recipe.cartonPackagingId) {
         // Recipe has carton packaging — apply carton/loose split
         if (existingStock) {
           // If units were incrementally logged (completedUnits > 0), the loose units are already
           // in stock from prior progress logs. We need to convert accumulated loose into cartons.
           // If no incremental logging (completedUnits === 0), we add the full output directly.
-          const unitsToDeductFromLoose = finalCartons * itemsPerCarton;
+          const unitsToDeductFromLoose = finalCartons * containersPerCarton;
           const looseAdjustment =
             productionRun.completedUnits === 0
               ? finalLoose
@@ -253,7 +262,66 @@ export const completeProductionFn = createServerFn()
           }
         }
         // If completedUnits > 0, units were already added to stock via log-production-progress-fn.
-        // No further stock update needed here.
+      }
+
+      // 5b. Update Weighted Average Cost on finished goods
+      // Recalculate WAC atomically in the same transaction as the stock update.
+      // WAC formula: newWAC = (currentUnits × currentWAC + addedUnits × actualCostPerPack) / (currentUnits + addedUnits)
+      // If current stock is zero, WAC = actualCostPerPack (no blending needed).
+      const costResult = calculateActualRunCost(
+        parseFloat(productionRun.totalProductionCost || "0") + additionalPackagingCost,
+        totalUnitsProduced,
+        finalCartons,
+        finalLoose,
+        productionRun.plannedCartonsProduced ?? productionRun.cartonsProduced ?? 0,
+      );
+
+      const [updatedStock] = await tx
+        .select()
+        .from(finishedGoodsStock)
+        .where(
+          and(
+            eq(finishedGoodsStock.warehouseId, productionRun.warehouseId),
+            eq(finishedGoodsStock.recipeId, productionRun.recipeId),
+          ),
+        );
+
+      if (updatedStock) {
+        // Stock was already incremented in this transaction.
+        // Subtract the newly produced units to get the pre-addition count.
+        const currentTotalUnits = calculateTotalUnits(
+          updatedStock.quantityCartons,
+          updatedStock.quantityContainers,
+          containersPerCarton,
+        ) - totalUnitsProduced;
+        const currentWAC = parseFloat(
+          updatedStock.weightedAverageCostPerPack?.toString() || "0",
+        );
+
+        const newWAC = calculateNewWAC(
+          currentTotalUnits,
+          currentWAC,
+          totalUnitsProduced,
+          costResult.actualCostPerPack,
+        );
+
+        const newWACPerCarton = calculateWACPerCarton(newWAC, containersPerCarton);
+        const newTotalUnits = calculateTotalUnits(
+          updatedStock.quantityCartons,
+          updatedStock.quantityContainers,
+          containersPerCarton,
+        );
+        const newTotalValue = calculateTotalInventoryValue(newTotalUnits, newWAC);
+
+        await tx
+          .update(finishedGoodsStock)
+          .set({
+            weightedAverageCostPerPack: newWAC.toFixed(4),
+            weightedAverageCostPerCarton: newWACPerCarton.toFixed(4),
+            totalInventoryValue: newTotalValue.toFixed(2),
+            updatedAt: new Date(),
+          })
+          .where(eq(finishedGoodsStock.id, updatedStock.id));
       }
 
 
@@ -307,6 +375,8 @@ export const completeProductionFn = createServerFn()
       });
 
       // 7. Update production run status with ACTUALS
+      // Keep planned fields (cartonsProduced, looseUnitsProduced, containersProduced) intact.
+      // Set actual fields separately.
       const finalPackagingCost = parseFloat(productionRun.totalPackagingCost || "0") + additionalPackagingCost;
       const finalProductionCost = parseFloat(productionRun.totalChemicalCost || "0") + finalPackagingCost;
 
@@ -315,13 +385,20 @@ export const completeProductionFn = createServerFn()
         .set({
           status: "completed",
           actualCompletionDate: new Date(),
-          cartonsProduced: finalCartons,
-          looseUnitsProduced: finalLoose,
+          // Actual output fields (separate from planned)
+          actualCartonsProduced: finalCartons,
+          actualPacksProduced: totalUnitsProduced,
+          actualLooseUnitsProduced: finalLoose,
           completedUnits: totalUnitsProduced,
+          // Actual cost fields
           totalPackagingCost: finalPackagingCost.toFixed(2),
           totalProductionCost: finalProductionCost.toFixed(2),
+          actualCostPerPack: costResult.actualCostPerPack.toFixed(4),
+          actualCostPerCarton: costResult.actualCostPerCarton.toFixed(4),
+          // Variance tracking
           shortfallUnits: shortfallUnits,
           shortfallReason: data.shortfallReason || null,
+          yieldVarianceCartons: costResult.yieldVarianceCartons,
         })
         .where(eq(productionRuns.id, productionRun.id));
 
@@ -331,13 +408,17 @@ export const completeProductionFn = createServerFn()
           ...productionRun,
           status: "completed" as const,
           actualCompletionDate: new Date(),
-          cartonsProduced: finalCartons,
-          looseUnitsProduced: finalLoose,
+          actualCartonsProduced: finalCartons,
+          actualPacksProduced: totalUnitsProduced,
+          actualLooseUnitsProduced: finalLoose,
           completedUnits: totalUnitsProduced,
           totalPackagingCost: finalPackagingCost.toFixed(2),
           totalProductionCost: finalProductionCost.toFixed(2),
+          actualCostPerPack: costResult.actualCostPerPack.toFixed(4),
+          actualCostPerCarton: costResult.actualCostPerCarton.toFixed(4),
           shortfallUnits: shortfallUnits,
           shortfallReason: data.shortfallReason || null,
+          yieldVarianceCartons: costResult.yieldVarianceCartons,
         },
       };
     });

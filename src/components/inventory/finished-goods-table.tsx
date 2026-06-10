@@ -47,6 +47,9 @@ type FinishedGood = {
       name: string;
     };
   };
+  weightedAverageCostPerPack: string | null;
+  weightedAverageCostPerCarton: string | null;
+  totalInventoryValue: string | null;
 };
 
 interface FinishedGoodsTableProps {
@@ -177,16 +180,31 @@ export const FinishedGoodsTable = ({
         header: "Total & Loose Units",
           cell: ({ row }) => {
             const fg = row.original;
+            const stats = fg.cartonStats || { total: 0, complete: 0, partial: 0, totalPacks: 0 };
+            const totalPacks = stats.totalPacks;
+            const loose = fg.quantityContainers;
+            const totalUnits = totalPacks + loose;
             return (
-              <div className="flex flex-col">
+              <div className="flex flex-col gap-0.5">
                 <span className="font-mono font-bold text-foreground">
-                  {fg.cartonStats.totalPacks + fg.quantityContainers}
+                  {totalUnits}
                 </span>
-                <div className="flex items-center gap-1 text-[10px] uppercase font-bold text-muted-foreground">
-                  <span>Loose:</span>
-                  <span className={fg.quantityContainers > 0 ? "text-primary" : ""}>
-                    {fg.quantityContainers}
-                  </span>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] uppercase font-bold text-muted-foreground">
+                  {stats.partial > 0 && (
+                    <span className="flex items-center gap-1">
+                      <span className="text-amber-600">{stats.partial}</span>
+                      <span>Partial</span>
+                    </span>
+                  )}
+                  {loose > 0 && (
+                    <span className="flex items-center gap-1">
+                      <span className="text-primary">{loose}</span>
+                      <span>Loose</span>
+                    </span>
+                  )}
+                  {stats.partial === 0 && loose === 0 && (
+                    <span>—</span>
+                  )}
                 </div>
               </div>
             );
@@ -224,6 +242,27 @@ export const FinishedGoodsTable = ({
             <Badge variant="outline" className="bg-emerald-50 text-emerald-600">
               Healthy
             </Badge>
+          );
+        },
+      },
+      {
+        id: "wac",
+        header: "WAC / Pack",
+        cell: ({ row }) => {
+          const fg = row.original;
+          const wac = parseFloat(fg.weightedAverageCostPerPack?.toString() || "0");
+          if (!wac || wac === 0) {
+            return <span className="text-muted-foreground">—</span>;
+          }
+          return (
+            <div className="flex flex-col text-[11px]">
+              <span className="font-medium">Rs. {wac.toFixed(2)}</span>
+              {fg.recipe.containersPerCarton && fg.recipe.containersPerCarton > 0 && (
+                <span className="text-muted-foreground">
+                  Carton: Rs. {parseFloat(fg.weightedAverageCostPerCarton?.toString() || "0").toFixed(2)}
+                </span>
+              )}
+            </div>
           );
         },
       },
@@ -325,13 +364,14 @@ export const FinishedGoodsTable = ({
           open={transferOpen}
           onOpenChange={setTransferOpen}
           warehouses={warehouses}
+          cartonStats={selectedItem.cartonStats}
           defaultValues={{
             fromWarehouseId: selectedItem.warehouse.id || preselectedWarehouse,
             materialType: "finished",
             materialId: selectedItem.recipe.id,
             quantity:
-              selectedItem.quantityCartons > 0
-                ? selectedItem.quantityCartons.toString()
+              selectedItem.cartonStats.complete > 0
+                ? selectedItem.cartonStats.complete.toString()
                 : "",
           }}
         />

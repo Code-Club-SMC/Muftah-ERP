@@ -91,8 +91,7 @@ export const AddEmployeeForm = ({ onSuccess }: Props) => {
       bankName: "",
       bankAccountNumber: "",
       standardDutyHours: 8,
-      standardSalary: "",
-      commissionRate: "0",
+      basicSalary: "",
       isOrderBooker: false,
       isSalesman: false,
       /**
@@ -512,30 +511,6 @@ export const AddEmployeeForm = ({ onSuccess }: Props) => {
             </form.Field>
           </div>
 
-          <form.Subscribe selector={(s: any) => s.values.isOrderBooker}>
-            {(isOrderBooker: boolean) =>
-              isOrderBooker && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in duration-300">
-                  <form.Field name="commissionRate">
-                    {(field: AnyFieldApi) => (
-                      <Field>
-                        <FieldLabel>Commission Rate (%)</FieldLabel>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder="0.00"
-                          value={field.state.value as string}
-                          onBlur={field.handleBlur}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                        />
-                        <FieldError errors={field.state.meta.errors} />
-                      </Field>
-                    )}
-                  </form.Field>
-                </div>
-              )
-            }
-          </form.Subscribe>
         </div>
 
         <Separator className="opacity-50" />
@@ -550,7 +525,7 @@ export const AddEmployeeForm = ({ onSuccess }: Props) => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <form.Field name="standardSalary">
+            <form.Field name="basicSalary">
               {(field: AnyFieldApi) => (
                 <Field>
                   <FieldLabel className="text-muted-foreground font-medium">

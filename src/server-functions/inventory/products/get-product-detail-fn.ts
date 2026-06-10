@@ -6,9 +6,6 @@ import { eq, and, sql, desc, gte, inArray } from "drizzle-orm";
 import { products, recipes, finishedGoodsStock, productionRuns, warehouses } from "@/db/schemas/inventory-schema";
 import { invoices, invoiceItems } from "@/db/schemas/sales-schema";
 import {
-  promotionalRules,
-  customerPriceAgreements,
-  customerDiscountRules,
   priceChangeLog,
   orders,
   orderItems,
@@ -51,9 +48,6 @@ export const getProductDetailFn = createServerFn()
       stockResult,
       priceChanges,
       productOrders,
-      promos,
-      priceAgreements,
-      discountRules,
     ] = await Promise.all([
       // 3. Monthly sales (last 12 months)
       recipeIds.length > 0
@@ -137,31 +131,6 @@ export const getProductDetailFn = createServerFn()
         .orderBy(desc(orders.createdAt))
         .limit(50),
 
-      // 8. Promotional rules
-      db.query.promotionalRules.findMany({
-        where: eq(promotionalRules.productId, productId),
-        orderBy: [desc(promotionalRules.createdAt)],
-      }),
-
-      // 9. Price agreements
-      db.query.customerPriceAgreements.findMany({
-        where: eq(customerPriceAgreements.productId, productId),
-        orderBy: [desc(customerPriceAgreements.createdAt)],
-        with: {
-          customer: { columns: { name: true } },
-        },
-        limit: 50,
-      }),
-
-      // 10. Discount rules
-      db.query.customerDiscountRules.findMany({
-        where: eq(customerDiscountRules.productId, productId),
-        orderBy: [desc(customerDiscountRules.createdAt)],
-        with: {
-          customer: { columns: { name: true } },
-        },
-        limit: 50,
-      }),
     ]);
 
     const monthlySales = monthlySalesResult.map((row) => ({
@@ -185,8 +154,7 @@ export const getProductDetailFn = createServerFn()
       stockByWarehouse,
       priceChanges,
       orders: productOrders,
-      promos,
-      priceAgreements,
-      discountRules,
+      promos: [],
+      discountRules: [],
     };
   });

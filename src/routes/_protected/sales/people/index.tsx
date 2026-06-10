@@ -20,7 +20,8 @@ import {
   useGetRetailers,
 } from "@/hooks/sales/use-sales-people";
 import { CustomerPagination } from "@/components/sales/customer-pagination";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Plus } from "lucide-react";
+import { CreateDistributorDialog } from "@/components/sales/create-distributor-dialog";
 
 const PKR = (v: number) =>
   `PKR ${v.toLocaleString("en-PK", { minimumFractionDigits: 2 })}`;
@@ -78,6 +79,7 @@ function SalesPeopleContent() {
 // ── Distributors Tab ──
 function DistributorsTab() {
   const [page, setPage] = useState(1);
+  const [createOpen, setCreateOpen] = useState(false);
   const { data } = useGetDistributors(page, 20);
   const navigate = useNavigate();
 
@@ -89,7 +91,13 @@ function DistributorsTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Distributors</h3>
+        <Button size="sm" onClick={() => setCreateOpen(true)}>
+          <Plus className="size-4 mr-1.5" />
+          Add Distributor
+        </Button>
       </div>
+
+      <CreateDistributorDialog open={createOpen} onOpenChange={setCreateOpen} />
 
       <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
         <Table>

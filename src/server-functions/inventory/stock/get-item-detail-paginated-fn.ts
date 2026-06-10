@@ -135,11 +135,33 @@ export const getItemDetailPaginatedFn = createServerFn()
         minimumStockLevel: result.minimumStockLevel,
         totalCartons,
         totalContainers,
-        stockByWarehouse: result.finishedGoods.map((fg) => ({
+        // WAC values aggregated across all warehouse stock records
+        weightedAverageCostPerPack: result.finishedGoods.reduce(
+          (sum: number, fg: any) => sum + parseFloat(fg.weightedAverageCostPerPack?.toString() || "0"),
+          0,
+        ) > 0
+          ? result.finishedGoods.reduce(
+              (sum: number, fg: any) => sum + parseFloat(fg.weightedAverageCostPerPack?.toString() || "0"),
+              0,
+            ) / (result.finishedGoods.filter((fg: any) => parseFloat(fg.weightedAverageCostPerPack?.toString() || "0") > 0).length || 1)
+          : null,
+        weightedAverageCostPerCarton: result.containersPerCarton && result.containersPerCarton > 0
+          ? (result.finishedGoods.reduce(
+              (sum: number, fg: any) => sum + parseFloat(fg.weightedAverageCostPerPack?.toString() || "0"),
+              0,
+            ) / (result.finishedGoods.filter((fg: any) => parseFloat(fg.weightedAverageCostPerPack?.toString() || "0") > 0).length || 1)) * result.containersPerCarton
+          : null,
+        totalInventoryValue: result.finishedGoods.reduce(
+          (sum: number, fg: any) => sum + parseFloat(fg.totalInventoryValue?.toString() || "0"),
+          0,
+        ),
+        stockByWarehouse: result.finishedGoods.map((fg: any) => ({
           warehouseId: fg.warehouseId,
           warehouseName: fg.warehouse.name,
           quantityCartons: fg.quantityCartons,
           quantityContainers: fg.quantityContainers,
+          weightedAverageCostPerPack: fg.weightedAverageCostPerPack,
+          weightedAverageCostPerCarton: fg.weightedAverageCostPerCarton,
         })),
       };
     }

@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
-import { employees } from "@/db/schemas/hr-schema";
+import { employees, salaryRevisions } from "@/db/schemas/hr-schema";
 import { salesmen, orderBookers } from "@/db/schemas/sales-erp-schema";
 import { createEmployeeSchema } from "@/lib/validators/hr-validators";
 import { requireHrManageMiddleware } from "@/lib/middlewares";
@@ -8,7 +8,7 @@ import { requireHrManageMiddleware } from "@/lib/middlewares";
 export const createEmployeeFn = createServerFn()
   .middleware([requireHrManageMiddleware])
   .inputValidator(createEmployeeSchema)
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     return await db.transaction(async (tx) => {
       const [newEmployee] = await tx
         .insert(employees)
@@ -36,13 +36,22 @@ export const createEmployeeFn = createServerFn()
           restDays: data.restDays ?? [0],
           bankAccountNumber: data.bankAccountNumber,
           standardDutyHours: data.standardDutyHours,
-          standardSalary: data.standardSalary || "0",
-          commissionRate: data.commissionRate || "0",
+          basicSalary: data.basicSalary || "0",
           isOrderBooker: data.isOrderBooker ?? false,
           isSalesman: data.isSalesman ?? false,
           allowanceConfig: data.allowanceConfig,
         })
         .returning();
+
+      // Record initial salary revision (effective on joining date)
+      await tx.insert(salaryRevisions).values({
+        employeeId: newEmployee.id,
+        revisionDate: data.joiningDate,
+        basicSalary: data.basicSalary || "0",
+        allowanceConfig: data.allowanceConfig || [],
+        reason: "Initial salary on joining",
+        changedById: context.session.user.id,
+      });
 
       // Create linked salesman record
       if (data.isSalesman) {
@@ -59,7 +68,6 @@ export const createEmployeeFn = createServerFn()
           name: `${data.firstName} ${data.lastName}`.trim(),
           phone: data.phone || undefined,
           address: data.address || undefined,
-          commissionRate: data.commissionRate || "0",
           employeeId: newEmployee.id,
         });
       }

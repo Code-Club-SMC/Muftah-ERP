@@ -35,6 +35,7 @@ export const createPaymentFn = createServerFn()
         .values({
           id: createId(),
           customerId: data.customerId,
+          invoiceId: data.invoiceId,
           amount: data.amount.toString(),
           method: data.method,
           reference: data.reference,
@@ -154,6 +155,7 @@ export const recordExpenseOffsetFn = createServerFn()
     z
       .object({
         customerId: z.string().min(1),
+        invoiceId: z.string().min(1, "Invoice is required - every payment must be linked to an invoice"),
         amount: z.number().positive(),
         expenseDescription: z.string().min(1),
         expenseCategoryId: z.string().min(1),
@@ -184,6 +186,7 @@ export const recordExpenseOffsetFn = createServerFn()
         .values({
           id: createId(),
           customerId: data.customerId,
+          invoiceId: data.invoiceId,
           amount: data.amount.toString(),
           method: "expense_offset",
           reference: data.reference,

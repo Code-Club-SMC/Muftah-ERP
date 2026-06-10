@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
-import { orders, orderItems, commissionRecords } from "@/db/schemas/sales-erp-schema";
+import { orders, orderItems, commissionRecords, salesmen } from "@/db/schemas/sales-erp-schema";
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -72,6 +72,7 @@ export const createOrderFn = createServerFn()
         items: z.array(
           z.object({
             productId: z.string().min(1),
+            recipeId: z.string().optional(),
             unitType: z.enum(["full_carton", "half_carton", "pack", "shopper"]).default("full_carton"),
             quantity: z.number().int().positive(),
             rate: z.number().nonnegative(),
@@ -100,6 +101,7 @@ export const createOrderFn = createServerFn()
         data.items.map((item) => ({
           orderId: order.id,
           productId: item.productId,
+          recipeId: item.recipeId,
           unitType: item.unitType,
           quantity: item.quantity,
           rate: item.rate.toString(),
@@ -173,6 +175,12 @@ export const fulfillOrderFn = createServerFn()
     });
     if (!order) throw new Error("Order not found");
     if (order.status === "delivered") throw new Error("Order already fulfilled");
+
+    const salesman = await db.query.salesmen.findFirst({
+      where: eq(salesmen.id, data.fulfilledBySalesmanId),
+    });
+    if (!salesman) throw new Error("Salesman not found");
+    if (salesman.status !== "active") throw new Error("Salesman is not active");
 
     return await db.transaction(async (tx) => {
       const [updated] = await tx

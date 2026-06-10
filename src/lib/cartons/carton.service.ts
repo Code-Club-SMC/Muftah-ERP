@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { cartons, adjustmentLog, productionRuns } from "@/db";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql, and } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import type { CartonStatus, AdjustmentType } from "./carton.types";
 import { MIN_YIELD_THRESHOLD } from "./carton.types";
@@ -560,9 +560,10 @@ export async function addCartonsToBatch(
   return db.transaction(async (tx) => {
     const run = await repo.findProductionRunByIdForUpdate(productionRunId, tx);
 
-    if (!["scheduled", "in_progress"].includes(run.status)) {
+    // Block cancelled/failed outright
+    if (["cancelled", "failed"].includes(run.status)) {
       throw new BatchClosedError(
-        "Cannot add cartons to a closed or cancelled production run.",
+        "Cannot add cartons to a cancelled or failed production run.",
       );
     }
 
@@ -574,6 +575,54 @@ export async function addCartonsToBatch(
       throw new Error(
         `Cannot add cartons: recipe "${recipe.name}" has no containersPerCarton defined. Set the carton capacity on the recipe first.`,
       );
+    }
+
+    // Calculate current cartons and target (exclude archived/retired)
+    const [existingCount] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(cartons)
+      .where(
+        and(
+          eq(cartons.productionRunId, productionRunId),
+          sql`${cartons.status} NOT IN ('ARCHIVED', 'RETIRED')`,
+        ),
+      );
+
+    const currentCartons = existingCount.count;
+    const targetUnits = recipe.targetUnitsPerBatch ?? 0;
+    const targetCartons = targetUnits > 0 && capacity > 0 ? Math.ceil(targetUnits / capacity) : 0;
+    const shortfall = Math.max(0, targetCartons - currentCartons);
+
+    // Enforce hard cap against shortfall when target is defined
+    if (targetCartons > 0) {
+      if (count > shortfall) {
+        throw new BatchClosedError(
+          shortfall === 0
+            ? "This batch has already met its production target. No additional cartons can be added."
+            : `Cannot add ${count} cartons. This batch is short by only ${shortfall} carton${shortfall !== 1 ? "s" : ""}.`,
+        );
+      }
+    }
+
+    // Completed batches with no target can't be verified for shortfall — block them
+    if (run.status === "completed" && targetCartons === 0) {
+      throw new BatchClosedError(
+        "Cannot add cartons to a completed batch with no production target defined.",
+      );
+    }
+
+    // If completed but shortfall exists, reopen to in_progress so downstream ops work
+    if (run.status === "completed" && shortfall > 0) {
+      await tx
+        .update(productionRuns)
+        .set({
+          status: "in_progress",
+          actualCompletionDate: null,
+          reopenedAt: new Date(),
+          reopenedBy: _userId,
+          reopenReason: "Auto-reopened: adding cartons to meet production shortfall",
+        })
+        .where(eq(productionRuns.id, productionRunId));
     }
 
     const newCartons: (typeof cartons.$inferInsert)[] = [];
@@ -594,24 +643,27 @@ export async function addCartonsToBatch(
 
     const created = await tx.insert(cartons).values(newCartons).returning();
 
-    // Check against recipe target
-    const [existingCount] = await tx
+    // Re-calculate after insert (exclude archived/retired)
+    const [newExistingCount] = await tx
       .select({ count: sql<number>`count(*)::int` })
       .from(cartons)
-      .where(eq(cartons.productionRunId, productionRunId));
+      .where(
+        and(
+          eq(cartons.productionRunId, productionRunId),
+          sql`${cartons.status} NOT IN ('ARCHIVED', 'RETIRED')`,
+        ),
+      );
 
     let exceedsTarget = false;
-    if (recipe.targetUnitsPerBatch && capacity > 0) {
-      const targetCartons = Math.ceil(
-        recipe.targetUnitsPerBatch / capacity,
-      );
-      exceedsTarget = existingCount.count > targetCartons;
+    if (targetUnits > 0 && capacity > 0) {
+      exceedsTarget = newExistingCount.count > targetCartons;
     }
 
     return {
       created,
       exceedsTarget,
-      totalCartons: existingCount.count,
+      totalCartons: newExistingCount.count,
+      shortfallCartons: Math.max(0, targetCartons - newExistingCount.count),
     };
   });
 }
@@ -922,7 +974,7 @@ export async function closeBatch(
         status: "completed",
         actualCompletionDate: new Date(),
         closedBy: userId,
-      } as Partial<typeof productionRuns.$inferInsert>)
+      })
       .where(eq(productionRuns.id, productionRunId));
 
     const updatedRun = await repo.findProductionRunById(productionRunId);
@@ -997,7 +1049,7 @@ export async function reopenBatch(
         reopenedAt: new Date(),
         reopenedBy: userId,
         reopenReason,
-      } as Partial<typeof productionRuns.$inferInsert>)
+      })
       .where(eq(productionRuns.id, productionRunId));
 
     const updatedRun = await repo.findProductionRunById(productionRunId);

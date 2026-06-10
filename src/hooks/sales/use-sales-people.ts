@@ -9,6 +9,7 @@ import {
   getOrderBookerDetailFn,
   getCustomersByTypeFn,
 } from "@/server-functions/sales/sales-config-fn";
+import { createCustomerFn } from "@/server-functions/sales/customers-fn";
 
 export const salesPeopleKeys = {
   all: ["sales-people"] as const,
@@ -19,6 +20,7 @@ export const salesPeopleKeys = {
     [...salesPeopleKeys.all, "distributors", page, limit] as const,
   retailers: (page?: number, limit?: number) =>
     [...salesPeopleKeys.all, "retailers", page, limit] as const,
+  customers: () => [...salesPeopleKeys.all, "customers"] as const,
 };
 
 // ── Salesmen ──
@@ -97,5 +99,18 @@ export function useGetRetailers(page = 1, limit = 20) {
   return useQuery({
     queryKey: salesPeopleKeys.retailers(page, limit),
     queryFn: () => getCustomersByTypeFn({ data: { customerType: "retailer", page, limit } }),
+  });
+}
+
+// ── Customers ──
+export function useCreateCustomer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: createCustomerFn,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: salesPeopleKeys.distributors() });
+      qc.invalidateQueries({ queryKey: salesPeopleKeys.retailers() });
+      qc.invalidateQueries({ queryKey: salesPeopleKeys.customers() });
+    },
   });
 }

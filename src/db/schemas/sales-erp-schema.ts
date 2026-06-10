@@ -6,16 +6,16 @@ import {
   timestamp,
   decimal,
   integer,
-  unique,
-  index,
-  jsonb,
-  boolean,
   serial,
+  boolean,
+  index,
+  unique,
 } from "drizzle-orm/pg-core";
 
 import { customers, invoices } from "./sales-schema";
-import { products } from "./inventory-schema";
+import { products, recipes } from "./inventory-schema";
 import { user } from "./auth-schema";
+import { employees } from "./hr-schema";
 
 const timestamps = {
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -37,40 +37,58 @@ export const salesmen = pgTable("salesmen", {
   ...timestamps,
 });
 
-// --- CUSTOMER PRICE AGREEMENTS ---
-export const customerPriceAgreements = pgTable("customer_price_agreements", {
+// --- RECIPE PRICES (per-pack baseline pricing for invoices) ---
+export const recipePrices = pgTable("recipe_prices", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  recipeId: text("recipe_id")
+    .notNull()
+    .references(() => recipes.id, { onDelete: "cascade" })
+    .unique(),
+  invoicePricePerPack: decimal("invoice_price_per_pack", {
+    precision: 12,
+    scale: 2,
+  }).notNull(),
+  retailPricePerPack: decimal("retail_price_per_pack", {
+    precision: 12,
+    scale: 2,
+  }).notNull(),
+  updatedById: text("updated_by_id").references(() => user.id),
+  ...timestamps,
+});
+
+// --- DISCOUNT RULES (distributor-specific, flexible discount configuration) ---
+// Supports: per-recipe rules, all-items rules, discount cartons, and free units
+export const discountRules = pgTable("discount_rules", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => createId()),
   customerId: text("customer_id")
     .notNull()
-    .references(() => customers.id),
-  productId: text("product_id")
-    .notNull()
-    .references(() => products.id),
-  pricingType: text("pricing_type").notNull(), // "fixed" | "margin_off_tp" | "flat_discount"
-  agreedValue: decimal("agreed_value", { precision: 12, scale: 2 }).notNull(),
-  tpBaseline: decimal("tp_baseline", { precision: 12, scale: 2 }), // Nullable, only for margin_off_tp
+    .references(() => customers.id, { onDelete: "cascade" }),
+  recipeId: text("recipe_id")
+    .references(() => recipes.id, { onDelete: "cascade" }), // NULL = applies to ALL items
+  // Rule type determines how the discount is applied
+  ruleType: text("rule_type").notNull().default("free_units"), 
+  // "free_units" | "discount_cartons" | "percentage_off"
+  quantityThreshold: integer("quantity_threshold").notNull().default(0),
+  // Minimum cartons to trigger the rule
+  freeUnits: integer("free_units").notNull().default(0),
+  // Number of free cartons given (for free_units type)
+  discountCartons: integer("discount_cartons").notNull().default(0),
+  // Number of cartons discounted/charged at reduced rate (for discount_cartons type)
+  discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }).default("0"),
+  // Percentage off for percentage_off type (e.g., 10.00 = 10% off)
   effectiveFrom: timestamp("effective_from").defaultNow().notNull(),
-  effectiveTo: timestamp("effective_to"), // Nullable means active
+  effectiveTo: timestamp("effective_to"),
+  isActive: boolean("is_active").default(true).notNull(),
   ...timestamps,
-});
-
-// --- PROMOTIONAL RULES ---
-export const promotionalRules = pgTable("promotional_rules", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => createId()),
-  productId: text("product_id")
-    .notNull()
-    .references(() => products.id),
-  buyQty: integer("buy_qty").notNull(),
-  freeQty: integer("free_qty").notNull(),
-  eligibleCustomerType: text("eligible_customer_type").notNull().default("all"), // "shopkeeper" | "distributor" | "retailer" | "wholesaler" | "all"
-  activeFrom: timestamp("active_from").defaultNow().notNull(),
-  activeTo: timestamp("active_to"),
-  ...timestamps,
-});
+}, (table) => ({
+  customerRecipeIdx: index("idx_discount_rules_customer_recipe").on(table.customerId, table.recipeId),
+  datesIdx: index("idx_discount_rules_dates").on(table.effectiveFrom, table.effectiveTo),
+  activeIdx: index("idx_discount_rules_active").on(table.isActive),
+}));
 
 // --- PAYMENTS ---
 export const payments = pgTable("payments", {
@@ -80,7 +98,9 @@ export const payments = pgTable("payments", {
   customerId: text("customer_id")
     .notNull()
     .references(() => customers.id),
-  invoiceId: text("invoice_id").references(() => invoices.id), // Optional
+  invoiceId: text("invoice_id")
+    .notNull()
+    .references(() => invoices.id), // Required - every payment must be linked to an invoice
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   method: text("method").notNull().default("cash"), // "cash" | "bank_transfer" | "expense_offset"
   reference: text("reference"),
@@ -146,31 +166,6 @@ export const creditRecoveryAttempts = pgTable("credit_recovery_attempts", {
   slipIdIdx: index("idx_credit_recovery_attempts_slip_id").on(table.slipId),
 }));
 
-// --- CUSTOMER DISCOUNT RULES ---
-export const customerDiscountRules = pgTable("customer_discount_rules", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => createId()),
-  customerId: text("customer_id")
-    .notNull()
-    .references(() => customers.id, { onDelete: "restrict" }),
-  productId: text("product_id")
-    .notNull()
-    .references(() => products.id, { onDelete: "restrict" }),
-  volumeThreshold: integer("volume_threshold").notNull(),
-  discountType: text("discount_type").notNull(), // "carton_equivalent" | "percentage" | "fixed_amount"
-  discountValue: decimal("discount_value", { precision: 12, scale: 2 }).notNull(),
-  eligibleCustomerType: text("eligible_customer_type").notNull().default("all"), // "distributor" | "retailer" | "wholesaler" | "all"
-  effectiveFrom: timestamp("effective_from").defaultNow().notNull(),
-  effectiveTo: timestamp("effective_to"),
-  ...timestamps,
-}, (table) => ({
-  uniqueCustomerProductThreshold: unique("customer_discount_rules_customer_product_threshold_unique").on(table.customerId, table.productId, table.volumeThreshold),
-  customerProductIdx: index("idx_customer_discount_rules_customer_product").on(table.customerId, table.productId),
-  datesIdx: index("idx_customer_discount_rules_dates").on(table.effectiveFrom, table.effectiveTo),
-  productIdx: index("idx_customer_discount_rules_product").on(table.productId),
-}));
-
 // --- PRICE CHANGE LOG ---
 export const priceChangeLog = pgTable("price_change_log", {
   id: text("id")
@@ -221,7 +216,8 @@ export const orders = pgTable("orders", {
   shopkeeperAddress: text("shopkeeper_address"),
   status: text("status").notNull().default("pending"), // "pending" | "confirmed" | "delivered" | "returned"
   tripId: text("trip_id"),
-  fulfilledBySalesmanId: text("fulfilled_by_salesman_id"),
+  fulfilledBySalesmanId: text("fulfilled_by_salesman_id")
+    .references(() => salesmen.id),
   fulfilledAt: timestamp("fulfilled_at"),
   fulfilledAmount: decimal("fulfilled_amount", { precision: 12, scale: 2 }),
   notes: text("notes"),
@@ -239,6 +235,8 @@ export const orderItems = pgTable("order_items", {
   productId: text("product_id")
     .notNull()
     .references(() => products.id),
+  recipeId: text("recipe_id")
+    .references(() => recipes.id),
   unitType: text("unit_type").notNull().default("full_carton"), // "full_carton" | "half_carton" | "pack" | "shopper"
   quantity: integer("quantity").notNull().default(0),
   rate: decimal("rate", { precision: 12, scale: 2 }).notNull().default("0"),
@@ -271,6 +269,7 @@ export const commissionTiers = pgTable("commission_tiers", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => createId()),
+  orderBookerId: text("order_booker_id").references(() => orderBookers.id),
   minAmount: decimal("min_amount", { precision: 12, scale: 2 }).notNull(),
   maxAmount: decimal("max_amount", { precision: 12, scale: 2 }),
   rate: decimal("rate", { precision: 5, scale: 2 }).notNull(),
@@ -296,7 +295,57 @@ export const commissionRecords = pgTable("commission_records", {
   status: text("status").notNull().default("accrued"), // "accrued" | "paid" | "reversed"
   paidInPayslipId: text("paid_in_payslip_id"),
   ...timestamps,
-});
+}, (table) => ({
+  uniqueOrderBookerOrder: unique("uq_commission_records_booker_order").on(
+    table.orderBookerId,
+    table.orderId,
+  ),
+}));
+
+// --- SALES PERFORMANCE LOGS (Order Booker & Salesman monthly metrics) ---
+export const salesPerformanceLogs = pgTable("sales_performance_logs", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+
+  employeeId: text("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+
+  // Period
+  yearMonth: text("year_month").notNull(), // "YYYY-MM"
+
+  // Order Booker specific
+  totalOrders: integer("total_orders").default(0).notNull(),
+  fulfilledOrders: integer("fulfilled_orders").default(0).notNull(),
+  totalOrderValue: decimal("total_order_value", { precision: 14, scale: 2 }).default("0").notNull(),
+  totalCommission: decimal("total_commission", { precision: 12, scale: 2 }).default("0").notNull(),
+
+  // Salesman specific
+  totalInvoices: integer("total_invoices").default(0).notNull(),
+  totalCartonsSold: integer("total_cartons_sold").default(0).notNull(),
+  totalSalesValue: decimal("total_sales_value", { precision: 14, scale: 2 }).default("0").notNull(),
+  totalTargetValue: decimal("total_target_value", { precision: 14, scale: 2 }).default("0").notNull(),
+
+  // Achievement rate (computed)
+  achievementRate: decimal("achievement_rate", { precision: 5, scale: 2 }).default("0").notNull(), // percentage
+
+  // Rank within role for the month
+  monthlyRank: integer("monthly_rank").default(0).notNull(),
+
+  // Raw data references
+  commissionRecordIds: jsonb("commission_record_ids").$type<string[]>().default([]),
+  invoiceIds: jsonb("invoice_ids").$type<string[]>().default([]),
+
+  // Attribution
+  loggedAt: timestamp("logged_at").defaultNow().notNull(),
+  remarks: text("remarks"),
+
+  ...timestamps,
+}, (table) => ({
+  employeeMonthIdx: index("idx_perf_logs_employee_month").on(table.employeeId, table.yearMonth),
+  yearMonthIdx: index("idx_perf_logs_year_month").on(table.yearMonth),
+}));
 
 // --- RELATIONS ---
 export const salesmenRelations = relations(salesmen, ({ many }) => ({
@@ -305,40 +354,27 @@ export const salesmenRelations = relations(salesmen, ({ many }) => ({
   slipRecords: many(slipRecords),
 }));
 
-export const customerPriceAgreementsRelations = relations(
-  customerPriceAgreements,
+export const recipePricesRelations = relations(recipePrices, ({ one }) => ({
+  recipe: one(recipes, {
+    fields: [recipePrices.recipeId],
+    references: [recipes.id],
+  }),
+  updatedBy: one(user, {
+    fields: [recipePrices.updatedById],
+    references: [user.id],
+  }),
+}));
+
+export const discountRulesRelations = relations(
+  discountRules,
   ({ one }) => ({
     customer: one(customers, {
-      fields: [customerPriceAgreements.customerId],
+      fields: [discountRules.customerId],
       references: [customers.id],
     }),
-    product: one(products, {
-      fields: [customerPriceAgreements.productId],
-      references: [products.id],
-    }),
-  })
-);
-
-export const promotionalRulesRelations = relations(
-  promotionalRules,
-  ({ one }) => ({
-    product: one(products, {
-      fields: [promotionalRules.productId],
-      references: [products.id],
-    }),
-  })
-);
-
-export const customerDiscountRulesRelations = relations(
-  customerDiscountRules,
-  ({ one }) => ({
-    customer: one(customers, {
-      fields: [customerDiscountRules.customerId],
-      references: [customers.id],
-    }),
-    product: one(products, {
-      fields: [customerDiscountRules.productId],
-      references: [products.id],
+    recipe: one(recipes, {
+      fields: [discountRules.recipeId],
+      references: [recipes.id],
     }),
   })
 );
@@ -442,6 +478,13 @@ export const commissionRecordsRelations = relations(commissionRecords, ({ one })
   }),
 }));
 
+export const salesPerformanceLogsRelations = relations(salesPerformanceLogs, ({ one }) => ({
+  employee: one(employees, {
+    fields: [salesPerformanceLogs.employeeId],
+    references: [employees.id],
+  }),
+}));
+
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({
   order: one(orders, {
     fields: [orderItems.orderId],
@@ -462,4 +505,32 @@ export const creditRecoveryAttemptsRelations = relations(creditRecoveryAttempts,
     fields: [creditRecoveryAttempts.assignedToId],
     references: [salesmen.id],
   }),
+}));
+
+// ── LEDGER EXPORT AUDIT LOG ────────────────────────────────────────────────
+// Tracks who viewed, printed, exported, or emailed ledger data.
+
+export const ledgerExportAuditLog = pgTable("ledger_export_audit_log", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  userId: text("user_id").notNull(),
+  userName: text("user_name"),
+  userEmail: text("user_email"),
+  entityType: text("entity_type").notNull(), // "distributor" | "salesman" | "shopkeeper"
+  entityId: text("entity_id").notNull(),
+  entityName: text("entity_name"),
+  exportType: text("export_type").notNull(), // "view" | "csv" | "pdf" | "print" | "email"
+  periodFrom: timestamp("period_from"),
+  periodTo: timestamp("period_to"),
+  entryCount: integer("entry_count").default(0),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  metadata: jsonb("metadata"), // Additional context
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  entityIdx: index("idx_ledger_audit_entity").on(table.entityType, table.entityId),
+  userIdx: index("idx_ledger_audit_user").on(table.userId),
+  exportTypeIdx: index("idx_ledger_audit_type").on(table.exportType),
+  createdAtIdx: index("idx_ledger_audit_created").on(table.createdAt),
 }));

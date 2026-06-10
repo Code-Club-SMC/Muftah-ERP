@@ -265,6 +265,18 @@ export const finishedGoodsStock = pgTable(
       .references(() => recipes.id),
     quantityCartons: integer("quantity_cartons").notNull().default(0),
     quantityContainers: integer("quantity_containers").notNull().default(0), // Loose units
+    weightedAverageCostPerPack: decimal("weighted_average_cost_per_pack", {
+      precision: 10,
+      scale: 4,
+    }).default("0"),
+    weightedAverageCostPerCarton: decimal("weighted_average_cost_per_carton", {
+      precision: 12,
+      scale: 4,
+    }).default("0"),
+    totalInventoryValue: decimal("total_inventory_value", {
+      precision: 14,
+      scale: 2,
+    }).default("0"),
     ...timestamps,
   },
   (t) => ({
@@ -302,6 +314,14 @@ export const productionRuns = pgTable(
     completedUnits: integer("completed_units").default(0), // Track incremental progress
     looseUnitsProduced: integer("loose_units_produced").default(0), // Containers not in cartons
 
+    // Planned output (set at creation, never overwritten)
+    plannedCartonsProduced: integer("planned_cartons_produced").default(0),
+
+    // Actual output (set at completion)
+    actualCartonsProduced: integer("actual_cartons_produced").default(0),
+    actualPacksProduced: integer("actual_packs_produced").default(0),
+    actualLooseUnitsProduced: integer("actual_loose_units_produced").default(0),
+
     // Costing
     totalChemicalCost: decimal("total_chemical_cost", {
       precision: 12,
@@ -318,11 +338,22 @@ export const productionRuns = pgTable(
     costPerContainer: decimal("cost_per_container", {
       precision: 10,
       scale: 4,
+    }).default("0"), // Budget/standard cost from recipe estimate
+
+    // Actual costing (set at completion from real production data)
+    actualCostPerPack: decimal("actual_cost_per_pack", {
+      precision: 10,
+      scale: 4,
+    }).default("0"),
+    actualCostPerCarton: decimal("actual_cost_per_carton", {
+      precision: 10,
+      scale: 4,
     }).default("0"),
 
     // Variance / Shortfall Tracking
     shortfallUnits: integer("shortfall_units").default(0),
     shortfallReason: text("shortfall_reason"),
+    yieldVarianceCartons: integer("yield_variance_cartons").default(0),
 
     // Status & Scheduling
     status: text("status").notNull().default("scheduled"), // "scheduled", "in_progress", "completed", "cancelled", "failed"

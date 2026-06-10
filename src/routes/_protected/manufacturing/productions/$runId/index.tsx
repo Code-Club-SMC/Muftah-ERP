@@ -280,7 +280,11 @@ function ProductionRunDetailsPage() {
                       variant="outline"
                       className="bg-emerald-500/5 text-emerald-600 border-emerald-500/20 font-bold mb-2"
                     >
-                      PKR {parseFloat(run.totalProductionCost || "0") > 0 && (run.completedUnits || 0) > 0 ? (parseFloat(run.totalProductionCost || "0") / run.completedUnits!).toFixed(2) : parseFloat(run.costPerContainer || "0").toFixed(2)} /
+                      PKR {Number(run.actualCostPerPack || "0") > 0
+                        ? Number(run.actualCostPerPack).toFixed(2)
+                        : (parseFloat(run.totalProductionCost || "0") > 0 && (run.completedUnits || 0) > 0
+                            ? (parseFloat(run.totalProductionCost || "0") / run.completedUnits!).toFixed(2)
+                            : parseFloat(run.costPerContainer || "0").toFixed(2))} /
                       Unit
                     </Badge>
                     <div className="text-xs text-right">

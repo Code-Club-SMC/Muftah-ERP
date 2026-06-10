@@ -39,7 +39,6 @@ import {
   DEDUCTION_OCCASIONS,
 } from "@/components/hr/employees/allowance-card";
 import { cn } from "@/lib/utils";
-import { Checkbox } from "@/components/ui/checkbox";
 
 // ── Rest days config ──────────────────────────────────────────────────────────
 
@@ -146,8 +145,7 @@ export const EditEmployeeForm = ({ employee, onSuccess }: Props) => {
       bankName: employee.bankName ?? "",
       bankAccountNumber: employee.bankAccountNumber ?? "",
       standardDutyHours: employee.standardDutyHours ?? 8,
-      standardSalary: employee.standardSalary ?? "",
-      commissionRate: employee.commissionRate ?? "0",
+      basicSalary: employee.basicSalary ?? "",
       isOrderBooker: (employee as any).isOrderBooker ?? false,
       isSalesman: (employee as any).isSalesman ?? false,
       /**
@@ -518,7 +516,7 @@ export const EditEmployeeForm = ({ employee, onSuccess }: Props) => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <form.Field name="standardSalary">
+            <form.Field name="basicSalary">
               {(field: AnyFieldApi) => (
                 <Field>
                   <FieldLabel className="text-muted-foreground font-medium">

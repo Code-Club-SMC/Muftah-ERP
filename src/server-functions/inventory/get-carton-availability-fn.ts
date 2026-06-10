@@ -8,9 +8,10 @@ import { eq, and, sql, notInArray } from "drizzle-orm";
 /**
  * Returns complete vs partial carton counts grouped by recipeId
  * for a given warehouse. Used by the invoice product dropdown to
- * show only sellable (complete) cartons and indicate partials.
+ * show only sellable (COMPLETE status) cartons and indicate partials.
  *
- * Excludes RETIRED, DISPATCHED, ARCHIVED, ON_HOLD statuses.
+ * Excludes RETIRED, DISPATCHED, ARCHIVED, ON_HOLD, SEALED statuses.
+ * Only COMPLETE status cartons count as sellable completeCartons.
  */
 export const getCartonAvailabilityFn = createServerFn()
   .middleware([requireInventoryViewMiddleware])
@@ -18,13 +19,13 @@ export const getCartonAvailabilityFn = createServerFn()
     z.object({ warehouseId: z.string().min(1) }).parse(input),
   )
   .handler(async ({ data }) => {
-    const excludedStatuses = ["RETIRED", "DISPATCHED", "ARCHIVED", "ON_HOLD"];
+    const excludedStatuses = ["RETIRED", "DISPATCHED", "ARCHIVED", "ON_HOLD", "SEALED"];
 
     const rows = await db
       .select({
         recipeId: cartons.recipeId,
-        completeCartons: sql<number>`COALESCE(SUM(CASE WHEN ${cartons.currentPacks} = ${cartons.capacity} THEN 1 ELSE 0 END), 0)`.as("complete_cartons"),
-        partialCartons: sql<number>`COALESCE(SUM(CASE WHEN ${cartons.currentPacks} < ${cartons.capacity} AND ${cartons.currentPacks} > 0 THEN 1 ELSE 0 END), 0)`.as("partial_cartons"),
+        completeCartons: sql<number>`COALESCE(SUM(CASE WHEN ${cartons.status} = 'COMPLETE' THEN 1 ELSE 0 END), 0)`.as("complete_cartons"),
+        partialCartons: sql<number>`COALESCE(SUM(CASE WHEN ${cartons.status} = 'PARTIAL' THEN 1 ELSE 0 END), 0)`.as("partial_cartons"),
         totalPacks: sql<number>`COALESCE(SUM(${cartons.currentPacks}), 0)`.as("total_packs"),
       })
       .from(cartons)

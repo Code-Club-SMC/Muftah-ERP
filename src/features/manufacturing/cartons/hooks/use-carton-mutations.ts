@@ -25,6 +25,8 @@ import {
   getCartonAuditLogFn,
   getBatchAuditLogFn,
   getCartonsByRecipeFn,
+  getProductionRunsByRecipeFn,
+  getRecipeKpisFn,
   getIntegrityAlertsFn,
   runIntegrityCheckFn,
   updateIntegrityAlertFn,
@@ -473,10 +475,27 @@ export function useBatchCartons(productionRunId: string) {
   });
 }
 
-export function useRecipeCartons(recipeId: string, page = 1, limit = 100, warehouseId?: string) {
+export function useRecipeCartons(recipeId: string, page = 1, limit = 100, warehouseId?: string, status?: string) {
   return useQuery({
-    queryKey: ["cartons", "recipe", recipeId, warehouseId, { page, limit }],
-    queryFn: () => getCartonsByRecipeFn({ data: { recipeId, warehouseId, page, limit } }),
+    queryKey: ["cartons", "recipe", recipeId, warehouseId, status, { page, limit }],
+    queryFn: () => getCartonsByRecipeFn({ data: { recipeId, warehouseId, status, page, limit } }),
+    enabled: !!recipeId,
+  });
+}
+
+export function useRecipeKpis(recipeId: string, warehouseId?: string) {
+  return useQuery({
+    queryKey: ["cartons", "recipe-kpis", recipeId, warehouseId],
+    queryFn: () => getRecipeKpisFn({ data: { recipeId, warehouseId } }),
+    enabled: !!recipeId,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useProductionRunsByRecipe(recipeId: string, warehouseId?: string) {
+  return useQuery({
+    queryKey: ["production-runs", "recipe", recipeId, warehouseId],
+    queryFn: () => getProductionRunsByRecipeFn({ data: { recipeId, warehouseId } }),
     enabled: !!recipeId,
   });
 }

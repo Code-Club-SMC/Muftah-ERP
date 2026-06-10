@@ -66,6 +66,11 @@ export function BatchDetailContainer() {
   const updateAlert = useUpdateIntegrityAlert();
 
   const hasCartons = kpis ? kpis.totalCartons > 0 : false;
+  const runStatus = kpis?.runStatus ?? "";
+  const isBatchClosed = ["completed", "cancelled", "failed"].includes(runStatus);
+  const canAddCartons = !["cancelled", "failed"].includes(runStatus);
+  const canCloseBatch = !["completed", "cancelled", "failed"].includes(runStatus);
+  const maxCartons = kpis?.shortfallCartons ?? null;
 
   const [activeSheet, setActiveSheet] = useState<SheetName>(null);
   const [selectedCarton, setSelectedCarton] = useState<CartonRow | null>(null);
@@ -105,15 +110,22 @@ export function BatchDetailContainer() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs font-bold uppercase tracking-wide"
-            onClick={() => openSheet("close-batch")}
-          >
-            <Lock className="size-3.5 mr-1.5" />
-            Close Batch
-          </Button>
+          {canCloseBatch && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs font-bold uppercase tracking-wide"
+              onClick={() => openSheet("close-batch")}
+            >
+              <Lock className="size-3.5 mr-1.5" />
+              Close Batch
+            </Button>
+          )}
+          {isBatchClosed && (
+            <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground/60 bg-muted px-2 py-1 rounded">
+              {runStatus}
+            </span>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -124,14 +136,16 @@ export function BatchDetailContainer() {
             <ShieldAlert className="size-3.5 mr-1.5" />
             {runIntegrity.isPending ? "Checking…" : "Integrity Check"}
           </Button>
-          <Button
-            size="sm"
-            className="h-8 text-xs font-bold uppercase tracking-wide"
-            onClick={() => openSheet("add-cartons")}
-          >
-            <Plus className="size-3.5 mr-1.5" />
-            Add Cartons
-          </Button>
+          {canAddCartons && (
+            <Button
+              size="sm"
+              className="h-8 text-xs font-bold uppercase tracking-wide"
+              onClick={() => openSheet("add-cartons")}
+            >
+              <Plus className="size-3.5 mr-1.5" />
+              Add Cartons
+            </Button>
+          )}
         </div>
       </div>
 
@@ -143,8 +157,8 @@ export function BatchDetailContainer() {
                 icon={Package}
                 title="No Cartons Yet"
                 description="This production run doesn't have any cartons. Add cartons to start tracking packs, dispatching, and managing inventory."
-                ctaText="Add Cartons to Batch"
-                onAddChange={() => openSheet("add-cartons")}
+                ctaText={canAddCartons ? "Add Cartons to Batch" : undefined}
+                onAddChange={canAddCartons ? () => openSheet("add-cartons") : undefined}
               />
             </div>
           ) : (
@@ -299,6 +313,8 @@ export function BatchDetailContainer() {
         open={activeSheet === "add-cartons"}
         onOpenChange={closeSheet}
         batchId={runId}
+        maxCartons={maxCartons}
+        runStatus={runStatus}
       />
     </div>
   );

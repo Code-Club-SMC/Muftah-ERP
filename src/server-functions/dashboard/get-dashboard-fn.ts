@@ -99,14 +99,14 @@ export const getDashboardStatsFn = createServerFn()
         .where(sql`${materialStock.packagingMaterialId} is not null`)
         .then((r) => r[0]),
 
-      // 3c. Finished goods stock value
+      // 3c. Finished goods stock value — uses WAC per pack
       db
         .select({
           value: sql<string>`coalesce(sum(
             (
               ${finishedGoodsStock.quantityCartons} * coalesce(${recipes.containersPerCarton}, 0)
               + ${finishedGoodsStock.quantityContainers}
-            )::numeric * coalesce(nullif(trim(${recipes.estimatedCostPerContainer}::text), '')::numeric, 0)
+            )::numeric * coalesce(nullif(trim(${finishedGoodsStock.weightedAverageCostPerPack}::text), '')::numeric, 0)
           ), 0)`,
         })
         .from(finishedGoodsStock)

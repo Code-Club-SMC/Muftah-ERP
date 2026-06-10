@@ -792,6 +792,11 @@ function CompletedRunSuccessView({
               <p className="font-mono font-bold">
                 PKR {Number(run.costPerContainer).toFixed(2)}
               </p>
+              {Number(run.actualCostPerPack || "0") > 0 && (
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Actual: PKR {Number(run.actualCostPerPack).toFixed(2)}/pack
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

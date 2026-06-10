@@ -9,8 +9,46 @@ import {
 import { z } from "zod";
 import { eq, sql, inArray } from "drizzle-orm";
 import { format, parseISO, startOfMonth, subMonths, addDays } from "date-fns";
-import { generateEmployeePayslipCore } from "./core";
+import { generateEmployeePayslipCore, simulateEmployeePayslipCore } from "./core";
+import { snapshotBradfordForPayroll } from "./bradford-snapshot-fn";
+import { rebuildSalesPerformanceLog } from "./sales-performance-fn";
 import { createId } from "@paralleldrive/cuid2";
+
+// ── Status Workflow Validation ────────────────────────────────────────────────
+type PayrollStatus = "draft" | "approved" | "paid";
+
+function validateStatusTransition(
+  currentStatus: PayrollStatus,
+  action: "edit" | "delete" | "approve" | "reject" | "pay" | "generate",
+): void {
+  const errors: Record<string, string> = {
+    "draft-edit": "Draft payroll can be edited",
+    "draft-delete": "Draft payroll can be deleted",
+    "draft-approve": "Draft payroll can be approved",
+    "draft-generate": "Cannot generate payslips for draft payroll. Approve first.",
+    "draft-reject": "Draft payroll cannot be rejected",
+    "draft-pay": "Draft payroll must be approved before payment",
+    "approved-edit": "Approved payroll is locked for editing",
+    "approved-delete": "Approved payroll cannot be deleted",
+    "approved-approve": "Payroll is already approved",
+    "approved-generate": "Approved payroll can generate payslips",
+    "approved-reject": "Approved payroll can be rejected back to draft",
+    "approved-pay": "Approved payroll can be marked as paid",
+    "paid-edit": "Paid payroll is fully immutable",
+    "paid-delete": "Paid payroll is fully immutable",
+    "paid-approve": "Paid payroll is fully immutable",
+    "paid-generate": "Paid payroll is fully immutable",
+    "paid-reject": "Paid payroll is fully immutable",
+    "paid-pay": "Payroll is already marked as paid",
+  };
+
+  const key = `${currentStatus}-${action}`;
+  const isAllowed = !errors[key]?.includes("cannot") && !errors[key]?.includes("immutable") && !errors[key]?.includes("locked");
+  
+  if (!isAllowed) {
+    throw new Error(errors[key] || `Invalid status transition: ${currentStatus} → ${action}`);
+  }
+}
 
 const createPayrollSchema = z.object({
   month: z.string(), // YYYY-MM-DD
@@ -22,7 +60,7 @@ export const createPayrollFn = createServerFn()
   .middleware([requireHrManageMiddleware])
   .inputValidator(createPayrollSchema)
   .handler(async ({ data }) => {
-    const { month, employeeIds, processedBy } = data;
+    const { month, processedBy } = data;
 
     // Calculate payroll period
     // Default: Previous month 16th to Current month 15th
@@ -36,7 +74,15 @@ export const createPayrollFn = createServerFn()
     );
     const endDate = format(addDays(startOfMonth(monthDate), 14), "yyyy-MM-dd");
 
-    // 1. Create payroll record
+    // Check if payroll already exists for this month
+    const existing = await db.query.payrolls.findFirst({
+      where: eq(payrolls.month, month),
+    });
+    if (existing) {
+      throw new Error(`Payroll for ${format(monthDate, "MMMM yyyy")} already exists (status: ${existing.status})`);
+    }
+
+    // 1. Create payroll record (draft status - no payslips generated yet)
     const [payroll] = await db
       .insert(payrolls)
       .values({
@@ -49,38 +95,55 @@ export const createPayrollFn = createServerFn()
       })
       .returning();
 
-    // 2. Identify employees to process
-    let employeesToProcess;
-    if (employeeIds && employeeIds.length > 0) {
-      employeesToProcess = await db.query.employees.findMany({
-        where: (employees, { inArray }) => inArray(employees.id, employeeIds),
-      });
-    } else {
-      employeesToProcess = await db.query.employees.findMany({
-        where: eq(employees.status, "active"),
-      });
-    }
+    return {
+      payroll,
+      message: `Payroll for ${format(monthDate, "MMMM yyyy")} created in draft status. Approve to generate payslips.`,
+    };
+  });
 
-    // 3. Generate Payslips in Parallel
+/**
+ * Generate payslips for an approved payroll.
+ * Can only be called when payroll status is "approved".
+ */
+export const generatePayslipsFn = createServerFn()
+  .middleware([requireHrManageMiddleware])
+  .inputValidator(z.object({ payrollId: z.string() }))
+  .handler(async ({ data }) => {
+    const payroll = await db.query.payrolls.findFirst({
+      where: eq(payrolls.id, data.payrollId),
+    });
+    if (!payroll) throw new Error("Payroll not found");
+
+    validateStatusTransition(payroll.status as PayrollStatus, "generate");
+
+    const monthDate = parseISO(payroll.month);
+
+    // Identify employees to process
+    const employeesToProcess = await db.query.employees.findMany({
+      where: eq(employees.status, "active"),
+    });
+
+    // Generate Payslips in Parallel
     const payslipPromises = employeesToProcess.map(async (employee) => {
       try {
-        return await generateEmployeePayslipCore({
-          employeeId: employee.id,
-          payrollId: payroll.id,
-          payrollPeriod: {
-            month,
-            startDate,
-            endDate,
+        return await generateEmployeePayslipCore(
+          {
+            employeeId: employee.id,
+            payrollId: payroll.id,
+            payrollPeriod: {
+              month: payroll.month,
+              startDate: payroll.startDate,
+              endDate: payroll.endDate,
+            },
           },
-          // Deduction config and additional amounts are defaults for bulk run
-          // Individual adjustments can happen via separate "Regenerate Single Payslip" actions if needed
-        });
+          payroll.processedBy || "system",
+        );
       } catch (error) {
         console.error(
           `Failed to generate payslip for employee ${employee.id}:`,
           error,
         );
-        return null; // Don't fail the whole batch
+        return null;
       }
     });
 
@@ -89,7 +152,7 @@ export const createPayrollFn = createServerFn()
       (p): p is NonNullable<typeof p> => p !== null,
     );
 
-    // 4. Update Payroll Total
+    // Update Payroll Total
     const totalAmount = successfulPayslips.reduce(
       (sum, p) => sum + parseFloat(p.netSalary.toString()),
       0,
@@ -100,15 +163,24 @@ export const createPayrollFn = createServerFn()
       .set({ totalAmount: totalAmount.toString() })
       .where(eq(payrolls.id, payroll.id));
 
+    // Rebuild sales performance logs for order bookers / salesmen (non-blocking)
+    const yearMonth = format(monthDate, "yyyy-MM");
+    for (const emp of employeesToProcess) {
+      if (emp.isOrderBooker || emp.isSalesman) {
+        try {
+          await rebuildSalesPerformanceLog(emp.id, yearMonth);
+        } catch (err) {
+          console.error(`Performance log failed for ${emp.id}:`, err);
+        }
+      }
+    }
+
     return {
-      payroll: {
-        ...payroll,
-        totalAmount: totalAmount.toString(),
-      },
       totalEmployees: employeesToProcess.length,
       generatedCount: successfulPayslips.length,
       failedCount: employeesToProcess.length - successfulPayslips.length,
-      message: `Payroll created. Generated ${successfulPayslips.length} payslips.`,
+      totalAmount: totalAmount.toString(),
+      message: `Generated ${successfulPayslips.length} payslips.`,
     };
   });
 
@@ -177,15 +249,51 @@ export const approvePayrollFn = createServerFn()
   .middleware([requireHrManageMiddleware])
   .inputValidator(z.object({ payrollId: z.string() }))
   .handler(async ({ data }) => {
+    // Fetch current payroll to validate status
+    const current = await db.query.payrolls.findFirst({
+      where: eq(payrolls.id, data.payrollId),
+    });
+    if (!current) throw new Error("Payroll not found");
+
+    validateStatusTransition(current.status as PayrollStatus, "approve");
+
     const [updated] = await db
       .update(payrolls)
       .set({ status: "approved" })
       .where(eq(payrolls.id, data.payrollId))
       .returning();
 
+    // Snapshot Bradford Factor data when payroll is approved (calculations frozen)
+    try {
+      await snapshotBradfordForPayroll(data.payrollId);
+    } catch (err) {
+      console.error("Bradford snapshot failed for payroll", data.payrollId, err);
+      // Non-blocking: approval succeeds even if snapshot fails
+    }
+
     return updated;
   });
 
+
+export const rejectPayrollFn = createServerFn()
+  .middleware([requireHrManageMiddleware])
+  .inputValidator(z.object({ payrollId: z.string() }))
+  .handler(async ({ data }) => {
+    const current = await db.query.payrolls.findFirst({
+      where: eq(payrolls.id, data.payrollId),
+    });
+    if (!current) throw new Error("Payroll not found");
+
+    validateStatusTransition(current.status as PayrollStatus, "reject");
+
+    const [updated] = await db
+      .update(payrolls)
+      .set({ status: "draft" })
+      .where(eq(payrolls.id, data.payrollId))
+      .returning();
+
+    return updated;
+  });
 
 /**
  * Mark payroll as paid — debits from a finance wallet and logs a ledger transaction.
@@ -206,8 +314,8 @@ export const markPayrollAsPaidFn = createServerFn()
       });
 
       if (!payroll) throw new Error("Payroll not found");
-      if (payroll.status === "paid")
-        throw new Error("Payroll is already marked as paid");
+
+      validateStatusTransition(payroll.status as PayrollStatus, "pay");
 
       const payrollAmount = parseFloat(payroll.totalAmount || "0");
 
@@ -269,6 +377,14 @@ export const deletePayrollFn = createServerFn()
   .middleware([requireHrManageMiddleware])
   .inputValidator(z.object({ payrollId: z.string() }))
   .handler(async ({ data }) => {
+    // Validate status before deletion
+    const current = await db.query.payrolls.findFirst({
+      where: eq(payrolls.id, data.payrollId),
+    });
+    if (!current) throw new Error("Payroll not found");
+
+    validateStatusTransition(current.status as PayrollStatus, "delete");
+
     return await db.transaction(async (tx) => {
       // 1. Get all payslip IDs for this payroll
       const payslipList = await tx.query.payslips.findMany({
@@ -297,4 +413,98 @@ export const deletePayrollFn = createServerFn()
 
       return deleted;
     });
+  });
+
+/**
+ * Simulate payroll generation WITHOUT writing to database.
+ * Returns preview of all payslips for review before confirmation.
+ */
+export const simulatePayrollFn = createServerFn()
+  .middleware([requireHrManageMiddleware])
+  .inputValidator(
+    z.object({
+      payrollId: z.string().optional(), // If provided, use existing payroll period
+      month: z.string().optional(), // If no payrollId, create virtual period
+      employeeIds: z.array(z.string()).optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    let startDate: string;
+    let endDate: string;
+    let month: string;
+
+    if (data.payrollId) {
+      const payroll = await db.query.payrolls.findFirst({
+        where: eq(payrolls.id, data.payrollId),
+      });
+      if (!payroll) throw new Error("Payroll not found");
+      startDate = payroll.startDate;
+      endDate = payroll.endDate;
+      month = payroll.month;
+    } else if (data.month) {
+      month = data.month;
+      const monthDate = parseISO(month);
+      const prevMonth = subMonths(monthDate, 1);
+      startDate = format(addDays(startOfMonth(prevMonth), 15), "yyyy-MM-dd");
+      endDate = format(addDays(startOfMonth(monthDate), 14), "yyyy-MM-dd");
+    } else {
+      throw new Error("Either payrollId or month must be provided");
+    }
+
+    // Identify employees to simulate
+    let employeesToProcess;
+    if (data.employeeIds && data.employeeIds.length > 0) {
+      const ids = data.employeeIds;
+      employeesToProcess = await db.query.employees.findMany({
+        where: (employees, { inArray }) => inArray(employees.id, ids),
+      });
+    } else {
+      employeesToProcess = await db.query.employees.findMany({
+        where: eq(employees.status, "active"),
+      });
+    }
+
+    // Simulate payslips in parallel
+    const simulationPromises = employeesToProcess.map(async (employee) => {
+      try {
+        return await simulateEmployeePayslipCore({
+          employeeId: employee.id,
+          payrollId: data.payrollId || "simulation",
+          payrollPeriod: { month, startDate, endDate },
+        });
+      } catch (error) {
+        console.error(`Simulation failed for employee ${employee.id}:`, error);
+        return {
+          error: error instanceof Error ? error.message : "Unknown error",
+          employeeId: employee.id,
+          employeeName: `${employee.firstName} ${employee.lastName}`,
+        };
+      }
+    });
+
+    const results = await Promise.all(simulationPromises);
+    const successful = results.filter((r): r is Exclude<typeof r, { error: string }> => !("error" in r));
+    const failed = results.filter((r): r is { error: string; employeeId: string; employeeName: string } => "error" in r);
+
+    const totalNet = successful.reduce(
+      (sum, r) => sum + (r.totalNetWithArrears || 0),
+      0,
+    );
+    const totalDeficit = successful.reduce(
+      (sum, r) => sum + (r.carriedForwardDeficit || 0),
+      0,
+    );
+
+    return {
+      month,
+      startDate,
+      endDate,
+      totalEmployees: employeesToProcess.length,
+      successfulCount: successful.length,
+      failedCount: failed.length,
+      totalNetSalary: totalNet,
+      totalCarriedForwardDeficit: totalDeficit,
+      simulations: successful,
+      errors: failed,
+    };
   });

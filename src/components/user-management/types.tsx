@@ -5,10 +5,12 @@ export type OverviewData = Awaited<ReturnType<typeof adminGetUsersFn>>;
 export type ManagedUser = OverviewData["users"][number];
 export type ManagedRole = OverviewData["roles"][number];
 export type PermissionDefinition = OverviewData["permissions"][number];
+export type OnboardingOrderBooker = OverviewData["onboardingOrderBookers"][number];
 
 export type UserDialogState =
   | {
       mode: "create";
+      seedOrderBooker?: OnboardingOrderBooker;
       user?: undefined;
     }
   | {
@@ -32,6 +34,7 @@ export const MODULE_LABELS: Record<string, string> = {
   inventory: "Inventory",
   suppliers: "Suppliers",
   sales: "Sales",
+  "order-booker": "Order Booker",
   finance: "Finance",
   hr: "HR & Payroll",
   operator: "Operator",

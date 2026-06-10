@@ -181,25 +181,49 @@ export async function findRecipeById(id: string, tx?: DbOrTx) {
 export async function getBatchKpis(productionRunId: string) {
   const result = await db.execute(sql`
     SELECT
-      COUNT(*) FILTER (WHERE status NOT IN ('ARCHIVED', 'RETIRED')) AS total_cartons,
-      COUNT(*) FILTER (WHERE status = 'COMPLETE') AS complete_cartons,
-      COUNT(*) FILTER (WHERE status = 'PARTIAL') AS partial_cartons,
-      COUNT(*) FILTER (WHERE status = 'SEALED') AS sealed_cartons,
-      COUNT(*) FILTER (WHERE status = 'DISPATCHED') AS dispatched_cartons,
-      COUNT(*) FILTER (WHERE status = 'ON_HOLD') AS on_hold_cartons,
-      COUNT(*) FILTER (WHERE status = 'RETIRED') AS retired_cartons,
-      COALESCE(SUM(current_packs) FILTER (WHERE status NOT IN ('ARCHIVED', 'RETIRED')), 0) AS total_packs,
-      COALESCE(SUM(capacity) FILTER (WHERE status NOT IN ('ARCHIVED', 'RETIRED')), 0) AS total_capacity,
-      ROUND(
-        COALESCE(SUM(current_packs) FILTER (WHERE status NOT IN ('ARCHIVED', 'RETIRED')), 0)::numeric
-        / NULLIF(SUM(capacity) FILTER (WHERE status NOT IN ('ARCHIVED', 'RETIRED')), 0) * 100, 2
-      ) AS fill_rate_pct
-    FROM cartons
-    WHERE production_run_id = ${productionRunId}
+      c.total_cartons,
+      c.complete_cartons,
+      c.partial_cartons,
+      c.sealed_cartons,
+      c.dispatched_cartons,
+      c.on_hold_cartons,
+      c.retired_cartons,
+      c.total_packs,
+      c.total_capacity,
+      c.fill_rate_pct,
+      p.status AS run_status,
+      r.target_units_per_batch,
+      r.containers_per_carton
+    FROM (
+      SELECT
+        COUNT(*) FILTER (WHERE status NOT IN ('ARCHIVED', 'RETIRED')) AS total_cartons,
+        COUNT(*) FILTER (WHERE status = 'COMPLETE') AS complete_cartons,
+        COUNT(*) FILTER (WHERE status = 'PARTIAL') AS partial_cartons,
+        COUNT(*) FILTER (WHERE status = 'SEALED') AS sealed_cartons,
+        COUNT(*) FILTER (WHERE status = 'DISPATCHED') AS dispatched_cartons,
+        COUNT(*) FILTER (WHERE status = 'ON_HOLD') AS on_hold_cartons,
+        COUNT(*) FILTER (WHERE status = 'RETIRED') AS retired_cartons,
+        COALESCE(SUM(current_packs) FILTER (WHERE status NOT IN ('ARCHIVED', 'RETIRED')), 0) AS total_packs,
+        COALESCE(SUM(capacity) FILTER (WHERE status NOT IN ('ARCHIVED', 'RETIRED')), 0) AS total_capacity,
+        ROUND(
+          COALESCE(SUM(current_packs) FILTER (WHERE status NOT IN ('ARCHIVED', 'RETIRED')), 0)::numeric
+          / NULLIF(SUM(capacity) FILTER (WHERE status NOT IN ('ARCHIVED', 'RETIRED')), 0) * 100, 2
+        ) AS fill_rate_pct
+      FROM cartons
+      WHERE production_run_id = ${productionRunId}
+    ) c
+    CROSS JOIN production_runs p
+    CROSS JOIN recipes r
+    WHERE p.id = ${productionRunId}
+      AND r.id = p.recipe_id
   `);
   const row = result.rows[0];
+  const capacity = Number(row?.containers_per_carton ?? 0);
+  const targetUnits = Number(row?.target_units_per_batch ?? 0);
+  const targetCartons = capacity > 0 && targetUnits > 0 ? Math.ceil(targetUnits / capacity) : 0;
+  const currentCartons = Number(row?.total_cartons ?? 0);
   return {
-    totalCartons: Number(row?.total_cartons ?? 0),
+    totalCartons: currentCartons,
     completeCartons: Number(row?.complete_cartons ?? 0),
     partialCartons: Number(row?.partial_cartons ?? 0),
     sealedCartons: Number(row?.sealed_cartons ?? 0),
@@ -209,6 +233,11 @@ export async function getBatchKpis(productionRunId: string) {
     totalPacks: Number(row?.total_packs ?? 0),
     totalCapacity: Number(row?.total_capacity ?? 0),
     fillRatePct: Number(row?.fill_rate_pct ?? 0),
+    runStatus: String(row?.run_status ?? ""),
+    targetUnitsPerBatch: targetUnits,
+    containersPerCarton: capacity,
+    targetCartons,
+    shortfallCartons: Math.max(0, targetCartons - currentCartons),
   };
 }
 

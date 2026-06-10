@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { commissionTiers, commissionRecords, orderBookers } from "@/db/schemas/sales-erp-schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 
 export async function calculateCommissionForOrder(
   tx: any,
@@ -10,10 +10,25 @@ export async function calculateCommissionForOrder(
 ) {
   const dbOrTx = tx || db;
 
-  const tiers = await dbOrTx.query.commissionTiers.findMany({
-    where: eq(commissionTiers.isActive, true),
+  // 1. Try order-booker-specific tiers first
+  let tiers = await dbOrTx.query.commissionTiers.findMany({
+    where: and(
+      eq(commissionTiers.orderBookerId, orderBookerId),
+      eq(commissionTiers.isActive, true),
+    ),
     orderBy: [commissionTiers.minAmount],
   });
+
+  // 2. Fall back to global tiers if no booker-specific tiers
+  if (tiers.length === 0) {
+    tiers = await dbOrTx.query.commissionTiers.findMany({
+      where: and(
+        isNull(commissionTiers.orderBookerId),
+        eq(commissionTiers.isActive, true),
+      ),
+      orderBy: [commissionTiers.minAmount],
+    });
+  }
 
   let totalCommission = 0;
   let appliedRate = 0;
@@ -26,7 +41,6 @@ export async function calculateCommissionForOrder(
     if (fulfilledAmount > min) {
       const bandAmount = Math.min(fulfilledAmount, max) - min;
       if (bandAmount > 0) {
-        // Use integer math to avoid floating-point artifacts
         totalCommission += Math.round(bandAmount * rate * 100) / 10000;
         appliedRate = rate;
       }
@@ -45,8 +59,6 @@ export async function calculateCommissionForOrder(
     }
   }
 
-  // Upsert with conflict resolution — unique index on (orderBookerId, orderId)
-  // prevents duplicate records under concurrent fulfillment
   await dbOrTx
     .insert(commissionRecords)
     .values({
@@ -61,7 +73,6 @@ export async function calculateCommissionForOrder(
       target: [commissionRecords.orderBookerId, commissionRecords.orderId],
     });
 
-  // Return the record (either newly inserted or pre-existing)
   const record = await dbOrTx.query.commissionRecords.findFirst({
     where: and(
       eq(commissionRecords.orderBookerId, orderBookerId),

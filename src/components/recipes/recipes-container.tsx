@@ -18,6 +18,7 @@ import { DatePickerWithRange } from "../custom/date-range-picker";
 import { ProductKpiCards } from "./product-kpi-cards";
 import { useProductSalesKpis } from "@/hooks/inventory/use-product-sales-kpis";
 import { getRouteApi } from "@tanstack/react-router";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 
 const route = getRouteApi("/_protected/manufacturing/recipes/");
 
@@ -31,6 +32,7 @@ export const RecipesContainer = () => {
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
   const [isAddProductOpen, setAddProductOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
@@ -101,10 +103,12 @@ export const RecipesContainer = () => {
     );
   }
 
-  // Filter based on search query
-  const filteredRecipes = recipes.filter((recipe) =>
-    recipe.name.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  // Filter based on search query and selected product
+  const filteredRecipes = recipes.filter((recipe) => {
+    const matchesSearch = recipe.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesProduct = !selectedProductId || recipe.productId === selectedProductId;
+    return matchesSearch && matchesProduct;
+  });
 
   return (
     <div className="space-y-6 h-full flex flex-col">
@@ -133,6 +137,19 @@ export const RecipesContainer = () => {
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:ml-auto">
             {activeTab === "recipes" && (
               <>
+                <Select value={selectedProductId} onValueChange={setSelectedProductId}>
+                  <SelectTrigger className="h-11 w-full sm:w-[220px] bg-muted/30 border-none rounded-xl">
+                    <SelectValue placeholder="All Products" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">All Products</SelectItem>
+                    {products.map((product) => (
+                      <SelectItem key={product.id} value={product.id}>
+                        {product.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <div className="relative group shrink-0">
                   <Input
                     placeholder={`Search ${activeTab}...`}
